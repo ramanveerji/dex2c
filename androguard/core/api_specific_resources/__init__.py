@@ -37,7 +37,9 @@ def load_permissions(apilevel, permtype='permissions'):
     apilevel = int(apilevel)
 
     root = os.path.dirname(os.path.realpath(__file__))
-    permissions_file = os.path.join(root, "aosp_permissions", "permissions_{}.json".format(apilevel))
+    permissions_file = os.path.join(
+        root, "aosp_permissions", f"permissions_{apilevel}.json"
+    )
 
     levels = filter(lambda x: re.match(r'^permissions_\d+\.json$', x), os.listdir(os.path.join(root, "aosp_permissions")))
     levels = list(map(lambda x: int(x[:-5].split('_')[1]), levels))
@@ -46,19 +48,25 @@ def load_permissions(apilevel, permtype='permissions'):
         log.error("No Permissions available, can not load!")
         return {}
 
-    log.debug("Available API levels: {}".format(", ".join(map(str, sorted(levels)))))
+    log.debug(f'Available API levels: {", ".join(map(str, sorted(levels)))}')
 
     if not os.path.isfile(permissions_file):
         if apilevel > max(levels):
-            log.warning("Requested API level {} is larger than maximum we have, returning API level {} instead.".format(apilevel, max(levels)))
+            log.warning(
+                f"Requested API level {apilevel} is larger than maximum we have, returning API level {max(levels)} instead."
+            )
             return load_permissions(max(levels), permtype)
         if apilevel < min(levels):
-            log.warning("Requested API level {} is smaller than minimal we have, returning API level {} instead.".format(apilevel, max(levels)))
+            log.warning(
+                f"Requested API level {apilevel} is smaller than minimal we have, returning API level {max(levels)} instead."
+            )
             return load_permissions(min(levels), permtype)
 
         # Missing level between existing ones, return the lower level
         lower_level = max(filter(lambda x: x < apilevel, levels))
-        log.warning("Requested API Level could not be found, using {} instead".format(lower_level))
+        log.warning(
+            f"Requested API Level could not be found, using {lower_level} instead"
+        )
         return load_permissions(lower_level, permtype)
 
     with open(permissions_file, "r") as fp:
@@ -74,7 +82,9 @@ def load_permission_mappings(apilevel):
     :return: a dictionary of {MethodSignature: [List of Permissions]}
     """
     root = os.path.dirname(os.path.realpath(__file__))
-    permissions_file = os.path.join(root, "api_permission_mappings", "permissions_{}.json".format(apilevel))
+    permissions_file = os.path.join(
+        root, "api_permission_mappings", f"permissions_{apilevel}.json"
+    )
 
     if not os.path.isfile(permissions_file):
         return {}

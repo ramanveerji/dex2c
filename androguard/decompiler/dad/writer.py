@@ -91,7 +91,7 @@ class Writer(object):
     # ('METHOD', 'sendToServer', 'this -> sendToServer', <androguard.decompiler.dad.instruction.ThisParam>)
     def write_ext(self, t):
         if not isinstance(t, tuple):
-            raise "Error in write_ext: %s not a tuple" % str(t)
+            raise f"Error in write_ext: {str(t)} not a tuple"
         self.buffer2.append(t)
 
     def end_ins(self):
@@ -131,13 +131,9 @@ class Writer(object):
         if isinstance(rhs, BinaryExpression) and lhs == rhs.var_map[rhs.arg1]:
             exp_rhs = rhs.var_map[rhs.arg2]
             if rhs.op in '+-' and isinstance(exp_rhs, Constant) and \
-                            exp_rhs.get_int_value() == 1:
+                                exp_rhs.get_int_value() == 1:
                 return self.write_ind_visit_end(lhs, rhs.op * 2, data=rhs)
-            return self.write_ind_visit_end(
-                lhs,
-                ' %s= ' % rhs.op,
-                exp_rhs,
-                data=rhs)
+            return self.write_ind_visit_end(lhs, f' {rhs.op}= ', exp_rhs, data=rhs)
         return self.write_ind_visit_end(lhs, ' = ', rhs, data=rhs)
 
     def visit_ins(self, ins):
@@ -155,38 +151,40 @@ class Writer(object):
         self.write('\n%s' % self.space())
         self.write_ext(('NEWLINE', '\n%s' % (self.space())))
         if acc:
-            self.write('%s ' % ' '.join(acc))
-            self.write_ext(('PROTOTYPE_ACCESS', '%s ' % ' '.join(acc)))
+            self.write(f"{' '.join(acc)} ")
+            self.write_ext(('PROTOTYPE_ACCESS', f"{' '.join(acc)} "))
         if self.constructor:
             name = get_type(self.method.cls_name).split('.')[-1]
             self.write(name)
-            self.write_ext(('NAME_METHOD_PROTOTYPE', '%s' % name, self.method))
+            self.write_ext(('NAME_METHOD_PROTOTYPE', f'{name}', self.method))
         else:
-            self.write('%s %s' % (get_type(self.method.type), self.method.name))
-            self.write_ext(
-                ('PROTOTYPE_TYPE', '%s' % get_type(self.method.type)))
+            self.write(f'{get_type(self.method.type)} {self.method.name}')
+            self.write_ext(('PROTOTYPE_TYPE', f'{get_type(self.method.type)}'))
             self.write_ext(('SPACE', ' '))
-            self.write_ext(
-                ('NAME_METHOD_PROTOTYPE', '%s' % self.method.name, self.method))
+            self.write_ext(('NAME_METHOD_PROTOTYPE', f'{self.method.name}', self.method))
         params = self.method.lparams
         if 'static' not in access:
             params = params[1:]
         proto = ''
         self.write_ext(('PARENTHESIS_START', '('))
         if self.method.params_type:
-            proto = ', '.join(['%s p%s' % (get_type(p_type), param) for p_type,
-                                                                        param in zip(self.method.params_type, params)])
+            proto = ', '.join(
+                [
+                    f'{get_type(p_type)} p{param}'
+                    for p_type, param in zip(self.method.params_type, params)
+                ]
+            )
             first = True
             for p_type, param in zip(self.method.params_type, params):
                 if not first:
                     self.write_ext(('COMMA', ', '))
                 else:
                     first = False
-                self.write_ext(('ARG_TYPE', '%s' % get_type(p_type)))
+                self.write_ext(('ARG_TYPE', f'{get_type(p_type)}'))
                 self.write_ext(('SPACE', ' '))
-                self.write_ext(('NAME_ARG', 'p%s' % param, p_type, self.method))
+                self.write_ext(('NAME_ARG', f'p{param}', p_type, self.method))
         self.write_ext(('PARENTHESIS_END', ')'))
-        self.write('(%s)' % proto)
+        self.write(f'({proto})')
         if self.graph is None:
             self.write(';\n')
             self.write_ext(('METHOD_END_NO_CONTENT', ';\n'))
@@ -220,8 +218,8 @@ class Writer(object):
             if loop.true is follow:
                 loop.neg()
                 loop.true, loop.false = loop.false, loop.true
-            self.write('%swhile (' % self.space())
-            self.write_ext(('WHILE', '%swhile (' % self.space()))
+            self.write(f'{self.space()}while (')
+            self.write_ext(('WHILE', f'{self.space()}while ('))
             loop.visit_cond(self)
             self.write(') {\n')
             self.write_ext(('WHILE_START', ') {\n'))
@@ -268,8 +266,8 @@ class Writer(object):
                 ('COMMENT_ERROR_MSG',
                  '%s// Both branches of the condition point to the same'
                  ' code.\n' % self.space()))
-            self.write('%s// if (' % self.space())
-            self.write_ext(('COMMENT_IF', '%s// if (' % self.space()))
+            self.write(f'{self.space()}// if (')
+            self.write_ext(('COMMENT_IF', f'{self.space()}// if ('))
             cond.visit_cond(self)
             self.write(') {\n')
             self.write_ext(('COMMENT_COND_END', ') {\n'))
@@ -282,7 +280,7 @@ class Writer(object):
             cond.neg()
             cond.true, cond.false = cond.false, cond.true
         if self.loop_follow[-1] in (cond.true, cond.false):
-            self.write('%sif (' % self.space(), data="IF_2")
+            self.write(f'{self.space()}if (', data="IF_2")
             cond.visit_cond(self)
             self.write(') {\n', data="IF_TRUE_2")
             self.inc_ind()
@@ -292,20 +290,20 @@ class Writer(object):
             self.visit_node(cond.false)
         elif follow is not None:
             if cond.true in (follow, self.next_case) or \
-                            cond.num > cond.true.num:
+                                cond.num > cond.true.num:
                 # or cond.true.num > cond.false.num:
                 cond.neg()
                 cond.true, cond.false = cond.false, cond.true
             self.if_follow.append(follow)
             if cond.true:  # in self.visited_nodes:
-                self.write('%sif (' % self.space(), data="IF")
+                self.write(f'{self.space()}if (', data="IF")
                 cond.visit_cond(self)
                 self.write(') {\n', data="IF_TRUE")
                 self.inc_ind()
                 self.visit_node(cond.true)
                 self.dec_ind()
-            is_else = not (follow in (cond.true, cond.false))
-            if is_else and not cond.false in self.visited_nodes:
+            is_else = follow not in (cond.true, cond.false)
+            if is_else and cond.false not in self.visited_nodes:
                 self.write('%s} else {\n' % self.space(), data="IF_FALSE")
                 self.inc_ind()
                 self.visit_node(cond.false)
@@ -314,7 +312,7 @@ class Writer(object):
             self.write('%s}\n' % self.space(), data="IF_END")
             self.visit_node(follow)
         else:
-            self.write('%sif (' % self.space(), data="IF_3")
+            self.write(f'{self.space()}if (', data="IF_3")
             cond.visit_cond(self)
             self.write(') {\n', data="IF_COND_3")
             self.inc_ind()
@@ -331,7 +329,7 @@ class Writer(object):
             cond1.neg()
         self.write('(', data="TODO24")
         cond1.visit_cond(self)
-        self.write(') %s (' % ['||', '&&'][aand], data="TODO25")
+        self.write(f") {['||', '&&'][aand]} (", data="TODO25")
         cond2.visit_cond(self)
         self.write(')', data="TODO26")
 
@@ -340,7 +338,7 @@ class Writer(object):
         for ins in lins[:-1]:
             self.visit_ins(ins)
         switch_ins = switch.get_ins()[-1]
-        self.write('%sswitch (' % self.space(), data="SWITCH")
+        self.write(f'{self.space()}switch (', data="SWITCH")
         self.visit_ins(switch_ins)
         self.write(') {\n', data="SWITCH_END")
         follow = switch.follow['switch']
@@ -355,10 +353,7 @@ class Writer(object):
                 self.write(
                     '%scase %d:\n' % (self.space(), case),
                     data="CASE_XX")
-            if i + 1 < len(cases):
-                self.next_case = cases[i + 1]
-            else:
-                self.next_case = None
+            self.next_case = cases[i + 1] if i + 1 < len(cases) else None
             if node is default:
                 self.write('%sdefault:\n' % self.space(), data="CASE_DEFAULT")
                 default = None
@@ -424,9 +419,10 @@ class Writer(object):
     def visit_decl(self, var):
         if not var.declared:
             var_type = var.get_type() or 'unknownType'
-            self.write('%s%s v%s' % (
-                self.space(), get_type(var_type), var.name),
-                       data="DECLARATION")
+            self.write(
+                f'{self.space()}{get_type(var_type)} v{var.name}',
+                data="DECLARATION",
+            )
             self.end_ins()
 
     def visit_constant(self, cst):
@@ -443,17 +439,16 @@ class Writer(object):
     def visit_variable(self, var):
         var_type = var.get_type() or 'unknownType'
         if not var.declared:
-            self.write('%s ' % get_type(var_type))
-            self.write_ext(
-                ('VARIABLE_TYPE', '%s' % get_type(var_type), var_type))
+            self.write(f'{get_type(var_type)} ')
+            self.write_ext(('VARIABLE_TYPE', f'{get_type(var_type)}', var_type))
             self.write_ext(('SPACE', ' '))
             var.declared = True
-        self.write('v%s' % var.name)
-        self.write_ext(('NAME_VARIABLE', 'v%s' % var.name, var, var_type))
+        self.write(f'v{var.name}')
+        self.write_ext(('NAME_VARIABLE', f'v{var.name}', var, var_type))
 
     def visit_param(self, param, data=None):
-        self.write('p%s' % param)
-        self.write_ext(('NAME_PARAM', 'p%s' % param, data))
+        self.write(f'p{param}')
+        self.write_ext(('NAME_PARAM', f'p{param}', data))
 
     def visit_this(self):
         self.write('this', data="THIS")
@@ -487,7 +482,7 @@ class Writer(object):
 
     def visit_put_static(self, cls, name, rhs):
         self.write_ind()
-        self.write('%s.%s = ' % (cls, name), data="STATIC_PUT")
+        self.write(f'{cls}.{name} = ', data="STATIC_PUT")
         rhs.visit(self)
         self.end_ins()
 
@@ -495,17 +490,17 @@ class Writer(object):
         self.write_ind_visit_end_ext(
             lhs,
             '.',
-            '%s' % name,
+            f'{name}',
             ' = ',
             rhs,
             data=data,
-            subsection='NAME_CLASS_ASSIGNMENT')
+            subsection='NAME_CLASS_ASSIGNMENT',
+        )
 
     def visit_new(self, atype, data=None):
-        self.write('new %s' % get_type(atype))
+        self.write(f'new {get_type(atype)}')
         self.write_ext(('NEW', 'new '))
-        self.write_ext(
-            ('NAME_CLASS_NEW', '%s' % get_type(atype), data.type, data))
+        self.write_ext(('NAME_CLASS_NEW', f'{get_type(atype)}', data.type, data))
 
     def visit_invoke(self, name, base, ptype, rtype, args, invokeInstr):
         if isinstance(base, ThisParam):
@@ -518,15 +513,15 @@ class Writer(object):
         base.visit(self)
         if name != '<init>':
             if isinstance(base, BaseClass):
-                call_name = "%s -> %s" % (base.cls, name)
+                call_name = f"{base.cls} -> {name}"
             elif isinstance(base, InstanceExpression):
-                call_name = "%s -> %s" % (base.ftype, name)
+                call_name = f"{base.ftype} -> {name}"
             elif hasattr(base, "base") and hasattr(base, "var_map"):
                 base2base = base
                 while True:
                     base2base = base2base.var_map[base2base.base]
                     if isinstance(base2base, NewInstance):
-                        call_name = "%s -> %s" % (base2base.type, name)
+                        call_name = f"{base2base.type} -> {name}"
                         break
                     elif (hasattr(base2base, "base") and
                               hasattr(base2base, "var_map")):
@@ -535,16 +530,24 @@ class Writer(object):
                         call_name = "UNKNOWN_TODO"
                         break
             elif isinstance(base, ThisParam):
-                call_name = "this -> %s" % name
+                call_name = f"this -> {name}"
             elif isinstance(base, Variable):
-                call_name = "%s -> %s" % (base.type, name)
+                call_name = f"{base.type} -> {name}"
             else:
                 call_name = "UNKNOWN_TODO2"
-            self.write('.%s' % name)
+            self.write(f'.{name}')
             self.write_ext(('INVOKE', '.'))
             self.write_ext(
-                ('NAME_METHOD_INVOKE', '%s' % name, call_name, ptype, rtype,
-                 base, invokeInstr))
+                (
+                    'NAME_METHOD_INVOKE',
+                    f'{name}',
+                    call_name,
+                    ptype,
+                    rtype,
+                    base,
+                    invokeInstr,
+                )
+            )
         self.write('(', data="PARAM_START")
         comma = False
         for arg in args:
@@ -572,7 +575,7 @@ class Writer(object):
         arg.visit(self)
 
     def visit_check_cast(self, arg, atype):
-        self.write('((%s) ' % atype, data="CHECKCAST")
+        self.write(f'(({atype}) ', data="CHECKCAST")
         arg.visit(self)
         self.write(')')
 
@@ -587,7 +590,7 @@ class Writer(object):
         self.write('.length', data="ARRAY_LENGTH")
 
     def visit_new_array(self, atype, size):
-        self.write('new %s[' % get_type(atype[1:]), data="NEW_ARRAY")
+        self.write(f'new {get_type(atype[1:])}[', data="NEW_ARRAY")
         size.visit(self)
         self.write(']', data="NEW_ARRAY_END")
 
@@ -604,7 +607,6 @@ class Writer(object):
         array.visit(self)
         self.write(' = {', data="ARRAY_FILLED")
         data = value.get_data()
-        tab = []
         elem_size = value.element_width
 
         # Set type depending on size of elements
@@ -614,12 +616,14 @@ class Writer(object):
             elem_id = data_types[elem_size]
         else:
             # FIXME for other types we just assume bytes...
-            logger.warning("Unknown element size {} for array. Assume bytes.".format(elem_size))
+            logger.warning(f"Unknown element size {elem_size} for array. Assume bytes.")
             elem_id = 'b'
             elem_size = 1
 
-        for i in range(0, value.size*elem_size, elem_size):
-            tab.append('%s' % unpack(elem_id, data[i:i+elem_size])[0])
+        tab = [
+            f'{unpack(elem_id, data[i:i + elem_size])[0]}'
+            for i in range(0, value.size * elem_size, elem_size)
+        ]
         self.write(', '.join(tab), data="COMMA")
         self.write('}', data="ARRAY_FILLED_END")
         self.end_ins()
@@ -627,11 +631,10 @@ class Writer(object):
     def visit_move_exception(self, var, data=None):
         var.declared = True
         var_type = var.get_type() or 'unknownType'
-        self.write('%s v%s' % (get_type(var_type), var.name))
-        self.write_ext(('EXCEPTION_TYPE', '%s' % get_type(var_type), data.type))
+        self.write(f'{get_type(var_type)} v{var.name}')
+        self.write_ext(('EXCEPTION_TYPE', f'{get_type(var_type)}', data.type))
         self.write_ext(('SPACE', ' '))
-        self.write_ext(
-            ('NAME_CLASS_EXCEPTION', 'v%s' % var.value(), data.type, data))
+        self.write_ext(('NAME_CLASS_EXCEPTION', f'v{var.value()}', data.type, data))
 
     def visit_monitor_enter(self, ref):
         self.write_ind()
@@ -654,23 +657,23 @@ class Writer(object):
     def visit_binary_expression(self, op, arg1, arg2):
         self.write('(', data="BINARY_EXPRESSION_START")
         arg1.visit(self)
-        self.write(' %s ' % op, data="TODO58")
+        self.write(f' {op} ', data="TODO58")
         arg2.visit(self)
         self.write(')', data="BINARY_EXPRESSION_END")
 
     def visit_unary_expression(self, op, arg):
-        self.write('(%s ' % op, data="UNARY_EXPRESSION_START")
+        self.write(f'({op} ', data="UNARY_EXPRESSION_START")
         arg.visit(self)
         self.write(')', data="UNARY_EXPRESSION_END")
 
     def visit_cast(self, op, arg):
-        self.write('(%s ' % op, data="CAST_START")
+        self.write(f'({op} ', data="CAST_START")
         arg.visit(self)
         self.write(')', data="CAST_END")
 
     def visit_cond_expression(self, op, arg1, arg2):
         arg1.visit(self)
-        self.write(' %s ' % op, data="COND_EXPRESSION")
+        self.write(f' {op} ', data="COND_EXPRESSION")
         arg2.visit(self)
 
     def visit_condz_expression(self, op, arg):
@@ -685,18 +688,18 @@ class Writer(object):
         else:
             arg.visit(self)
             if atype in 'VBSCIJFD':
-                self.write(' %s 0' % op, data="TODO64")
+                self.write(f' {op} 0', data="TODO64")
             else:
-                self.write(' %s null' % op, data="TODO65")
+                self.write(f' {op} null', data="TODO65")
 
     def visit_get_instance(self, arg, name, data=None):
         arg.visit(self)
-        self.write('.%s' % name)
+        self.write(f'.{name}')
         self.write_ext(('GET_INSTANCE', '.'))
-        self.write_ext(('NAME_CLASS_INSTANCE', '%s' % name, data))
+        self.write_ext(('NAME_CLASS_INSTANCE', f'{name}', data))
 
     def visit_get_static(self, cls, name):
-        self.write('%s.%s' % (cls, name), data="GET_STATIC")
+        self.write(f'{cls}.{name}', data="GET_STATIC")
 
 
 def string(s):
@@ -708,7 +711,7 @@ def string(s):
     ret = ['"']
     for c in s:
         if ' ' <= c < '\x7f':
-            if c == "'" or c == '"' or c == '\\':
+            if c in ["'", '"', '\\']:
                 ret.append('\\')
             ret.append(c)
             continue
@@ -718,10 +721,14 @@ def string(s):
                 ret.append(c.encode('unicode-escape').decode("ascii"))
                 continue
         i = ord(c)
-        ret.append('\\u')
-        ret.append('%x' % (i >> 12))
-        ret.append('%x' % ((i >> 8) & 0x0f))
-        ret.append('%x' % ((i >> 4) & 0x0f))
-        ret.append('%x' % (i & 0x0f))
+        ret.extend(
+            (
+                '\\u',
+                '%x' % (i >> 12),
+                '%x' % ((i >> 8) & 0x0F),
+                '%x' % ((i >> 4) & 0x0F),
+                '%x' % (i & 0x0F),
+            )
+        )
     ret.append('"')
     return ''.join(ret)

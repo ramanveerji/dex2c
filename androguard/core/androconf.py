@@ -226,15 +226,15 @@ def is_android_raw(raw):
     # if raw[0:2] == b"PK" and b'META-INF/MANIFEST.MF' in raw:
     # TODO this check might be still invalid. A ZIP file with stored APK inside would match as well.
     # probably it would be better to rewrite this and add more sanity checks.
-    if raw[0:2] == b"PK" and b'AndroidManifest.xml' in raw:
+    if raw[:2] == b"PK" and b'AndroidManifest.xml' in raw:
         val = "APK"
-    elif raw[0:3] == b"dex":
+    elif raw[:3] == b"dex":
         val = "DEX"
-    elif raw[0:3] == b"dey":
+    elif raw[:3] == b"dey":
         val = "DEY"
-    elif raw[0:4] == b"\x03\x00\x08\x00" or raw[0:4] == b"\x00\x00\x08\x00":
+    elif raw[:4] in [b"\x03\x00\x08\x00", b"\x00\x00\x08\x00"]:
         val = "AXML"
-    elif raw[0:4] == b"\x02\x00\x0C\x00":
+    elif raw[:4] == b"\x02\x00\x0C\x00":
         val = "ARSC"
 
     return val
@@ -323,14 +323,14 @@ def interpolate_tuple(startcolor, goalcolor, steps):
         hB = str.replace(hex(iB), "0x", "")
 
         if len(hR) == 1:
-            hR = "0" + hR
+            hR = f"0{hR}"
         if len(hB) == 1:
-            hB = "0" + hB
+            hB = f"0{hB}"
 
         if len(hG) == 1:
-            hG = "0" + hG
+            hG = f"0{hG}"
 
-        color = str.upper("#" + hR + hG + hB)
+        color = str.upper(f"#{hR}{hG}{hB}")
         buffer.append(color)
 
     return buffer
@@ -361,7 +361,9 @@ def load_api_specific_resource_module(resource_name, api=None):
                   api_permission_mappings=load_permission_mappings)
 
     if resource_name not in loader:
-        raise InvalidResourceError("Invalid Resource '{}', not in [{}]".format(resource_name, ", ".join(loader.keys())))
+        raise InvalidResourceError(
+            f"""Invalid Resource '{resource_name}', not in [{", ".join(loader.keys())}]"""
+        )
 
     if not api:
         api = CONF["DEFAULT_API"]
@@ -370,8 +372,9 @@ def load_api_specific_resource_module(resource_name, api=None):
 
     if ret == {}:
         # No API mapping found, return default
-        log.warning("API mapping for API level {} was not found! "
-                    "Returning default, which is API level {}".format(api, CONF['DEFAULT_API']))
+        log.warning(
+            f"API mapping for API level {api} was not found! Returning default, which is API level {CONF['DEFAULT_API']}"
+        )
         ret = loader[resource_name](CONF['DEFAULT_API'])
 
     return ret

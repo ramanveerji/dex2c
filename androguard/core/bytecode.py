@@ -27,7 +27,7 @@ def enable_print_colors(colors):
 
 # Handle exit message
 def Exit(msg):
-    log.warning("Error : " + msg)
+    log.warning(f"Error : {msg}")
     raise Exception("oops")
 
 
@@ -48,19 +48,17 @@ def _PrintNote(note, tab=0):
     print_fct = CONF["PRINT_FCT"]
     note_color = CONF["COLORS"]["NOTE"]
     normal_color = CONF["COLORS"]["NORMAL"]
-    print_fct("\t" * tab + "%s# %s%s" % (note_color, note, normal_color) + "\n")
+    print_fct("\t" * tab + f"{note_color}# {note}{normal_color}" + "\n")
 
 
 # Print arg into a correct format
 def _Print(name, arg):
-    buff = name + " "
+    buff = f"{name} "
 
-    if type(arg).__name__ == 'int':
-        buff += "0x%x" % arg
-    elif type(arg).__name__ == 'long':
+    if type(arg).__name__ in ['int', 'long']:
         buff += "0x%x" % arg
     elif type(arg).__name__ == 'str':
-        buff += "%s" % arg
+        buff += f"{arg}"
     elif isinstance(arg, SV):
         buff += "0x%x" % arg.get_value()
     elif isinstance(arg, SVs):
@@ -101,7 +99,6 @@ def _PrintDefault(msg):
 
 
 def PrettyShow(m_a, basic_blocks, notes={}):
-    idx = 0
     nb = 0
 
     offset_color = CONF["COLORS"]["OFFSET"]
@@ -117,6 +114,7 @@ def PrettyShow(m_a, basic_blocks, notes={}):
 
     colors = CONF["COLORS"]["OUTPUT"]
 
+    idx = 0
     for i in basic_blocks:
         print_fct("%s%s%s : \n" % (bb_color, i.get_name(), normal_color))
         instructions = list(i.get_instructions())
@@ -132,35 +130,40 @@ def PrettyShow(m_a, basic_blocks, notes={}):
                       (instruction_name_color, ins.get_name(), normal_color))
 
             operands = ins.get_operands()
-            print_fct(
-                "%s" %
-                ", ".join(m_a.get_vm().colorize_operands(operands, colors)))
+            print_fct(f'{", ".join(m_a.get_vm().colorize_operands(operands, colors))}')
 
             op_value = ins.get_op_value()
             if ins == instructions[-1] and i.childs:
                 print_fct(" ")
 
                 # packed/sparse-switch
-                if (op_value == 0x2b or op_value == 0x2c) and len(i.childs) > 1:
+                if op_value in [0x2B, 0x2C] and len(i.childs) > 1:
                     values = i.get_special_ins(idx).get_values()
-                    print_fct("%s[ D:%s%s " %
-                              (branch_false_color, i.childs[0][2].get_name(),
-                               branch_color))
-                    print_fct(' '.join("%d:%s" % (
-                        values[j], i.childs[j + 1][2].get_name()) for j in
-                                       range(0, len(i.childs) - 1)) + " ]%s" %
-                              normal_color)
+                    print_fct(
+                        f"{branch_false_color}[ D:{i.childs[0][2].get_name()}{branch_color} "
+                    )
+                    print_fct(
+                        ' '.join(
+                            "%d:%s"
+                            % (values[j], i.childs[j + 1][2].get_name())
+                            for j in range(0, len(i.childs) - 1)
+                        )
+                        + f" ]{normal_color}"
+                    )
+                elif len(i.childs) == 2:
+                    print_fct(
+                        f"{branch_false_color}[ {i.childs[0][2].get_name()}{branch_true_color} "
+                    )
+                    print_fct(
+                        ' '.join(f"{c[2].get_name()}" for c in i.childs[1:])
+                        + f" ]{normal_color}"
+                    )
                 else:
-                    if len(i.childs) == 2:
-                        print_fct("%s[ %s%s " % (branch_false_color,
-                                                 i.childs[0][2].get_name(),
-                                                 branch_true_color))
-                        print_fct(' '.join("%s" % c[2].get_name(
-                        ) for c in i.childs[1:]) + " ]%s" % normal_color)
-                    else:
-                        print_fct("%s[ " % branch_color + ' '.join(
-                            "%s" % c[2].get_name() for c in i.childs) + " ]%s" %
-                                  normal_color)
+                    print_fct(
+                        f"{branch_color}[ "
+                        + ' '.join(f"{c[2].get_name()}" for c in i.childs)
+                        + f" ]{normal_color}"
+                    )
 
             idx += ins.get_length()
             nb += 1

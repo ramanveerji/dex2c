@@ -47,7 +47,7 @@ def AnalyzeAPK(_file, session=None, raw=False):
     log.debug("AnalyzeAPK")
 
     if session:
-        log.debug("Using existing session {}".format(session))
+        log.debug(f"Using existing session {session}")
         if raw:
             data = _file
             filename = hashlib.md5(_file).hexdigest()
@@ -213,7 +213,7 @@ def clean_file_name(filename, unique=True, replace="_", force_nt=False):
         if len(fname) > PATH_MAX_LENGTH:
             if "." in fname:
                 f, ext = fname.rsplit(".", 1)
-                fname = "{}.{}".format(f[:PATH_MAX_LENGTH-(len(ext)+1)], ext)
+                fname = f"{f[:PATH_MAX_LENGTH - (len(ext) + 1)]}.{ext}"
             else:
                 fname = fname[:PATH_MAX_LENGTH]
 
@@ -229,9 +229,9 @@ def clean_file_name(filename, unique=True, replace="_", force_nt=False):
             if "." in fname:
                 # assume extension
                 f, ext = origname.rsplit(".", 1)
-                fname = "{}_{}.{}".format(f, counter, ext)
+                fname = f"{f}_{counter}.{ext}"
             else:
-                fname = "{}_{}".format(origname, counter)
+                fname = f"{origname}_{counter}"
             counter += 1
 
     return os.path.join(path, fname)

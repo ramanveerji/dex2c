@@ -138,38 +138,32 @@ def loop_type(start, end, nodes_in_loop):
                 start.looptype.is_pretest = True
         else:
             start.looptype.is_posttest = True
-    else:
-        if start.type.is_cond:
-            if start.true in nodes_in_loop and start.false in nodes_in_loop:
-                start.looptype.is_endless = True
-            else:
-                start.looptype.is_pretest = True
-        else:
+    elif start.type.is_cond:
+        if start.true in nodes_in_loop and start.false in nodes_in_loop:
             start.looptype.is_endless = True
+        else:
+            start.looptype.is_pretest = True
+    else:
+        start.looptype.is_endless = True
 
 
 def loop_follow(start, end, nodes_in_loop):
     follow = None
     if start.looptype.is_pretest:
-        if start.true in nodes_in_loop:
-            follow = start.false
-        else:
-            follow = start.true
+        follow = start.false if start.true in nodes_in_loop else start.true
     elif start.looptype.is_posttest:
-        if end.true in nodes_in_loop:
-            follow = end.false
-        else:
-            follow = end.true
+        follow = end.false if end.true in nodes_in_loop else end.true
     else:
         num_next = float('inf')
         for node in nodes_in_loop:
-            if node.type.is_cond:
-                if (node.true.num < num_next and
+            if (node.true.num < num_next and
                             node.true not in nodes_in_loop):
+                if node.type.is_cond:
                     follow = node.true
                     num_next = follow.num
-                elif (node.false.num < num_next and
+            elif (node.false.num < num_next and
                               node.false not in nodes_in_loop):
+                if node.type.is_cond:
                     follow = node.false
                     num_next = follow.num
     start.follow['loop'] = follow
@@ -198,11 +192,11 @@ def if_struct(graph, idoms):
     unresolved = set()
     for node in graph.post_order():
         if node.type.is_cond:
-            ldominates = []
-            for n, idom in idoms.items():
-                if node is idom and len(graph.reverse_edges.get(n, [])) > 1:
-                    ldominates.append(n)
-            if len(ldominates) > 0:
+            if ldominates := [
+                n
+                for n, idom in idoms.items()
+                if node is idom and len(graph.reverse_edges.get(n, [])) > 1
+            ]:
                 n = max(ldominates, key=lambda x: x.num)
                 node.follow['if'] = n
                 for x in unresolved.copy():
@@ -222,11 +216,11 @@ def switch_struct(graph, idoms):
             for suc in graph.sucs(node):
                 if idoms[suc] is not node:
                     m = common_dom(idoms, node, suc)
-            ldominates = []
-            for n, dom in idoms.items():
-                if m is dom and len(graph.all_preds(n)) > 1:
-                    ldominates.append(n)
-            if len(ldominates) > 0:
+            if ldominates := [
+                n
+                for n, dom in idoms.items()
+                if m is dom and len(graph.all_preds(n)) > 1
+            ]:
                 n = max(ldominates, key=lambda x: x.num)
                 node.follow['switch'] = n
                 for x in unresolved:
@@ -252,7 +246,7 @@ def short_circuit_struct(graph, idom, node_map):
 
         entry = graph.entry in (node1, node2)
 
-        new_name = '%s+%s' % (node1.name, node2.name)
+        new_name = f'{node1.name}+{node2.name}'
         condition = Condition(node1, node2, is_and, is_not)
 
         new_node = ShortCircuitBlock(new_name, condition)
@@ -371,23 +365,24 @@ def catch_struct(graph, idoms):
                     graph.edges[pred].remove(try_block)
                 graph.add_edge(pred, try_node)
 
-            if try_block.type.is_stmt:
-                follow = graph.sucs(try_block)
-                if follow:
-                    try_node.follow = graph.sucs(try_block)[0]
-                else:
-                    try_node.follow = None
-            elif try_block.type.is_cond:
-                loop_follow = try_block.follow['loop']
-                if loop_follow:
-                    try_node.follow = loop_follow
-                else:
-                    try_node.follow = try_block.follow['if']
-            elif try_block.type.is_switch:
-                try_node.follow = try_block.follow['switch']
-            else:  # return or throw
+            if try_block.type.is_stmt and (follow := graph.sucs(try_block)):
+                try_node.follow = graph.sucs(try_block)[0]
+            elif (
+                try_block.type.is_stmt
+                and not (follow := graph.sucs(try_block))
+                or not try_block.type.is_stmt
+                and not try_block.type.is_cond
+                and not try_block.type.is_switch
+            ):
                 try_node.follow = None
-
+            elif try_block.type.is_cond:
+                try_node.follow = (
+                    loop_follow
+                    if (loop_follow := try_block.follow['loop'])
+                    else try_block.follow['if']
+                )
+            else:
+                try_node.follow = try_block.follow['switch']
         try_node.add_catch_node(catch_node)
     for node in graph.nodes:
         node.update_attribute_with(node_map)
@@ -424,8 +419,9 @@ def identify_structures(graph, idoms):
         loop_follow(node, node.latch, node.loop_nodes)
 
     for node in if_unresolved:
-        follows = [n for n in (node.follow['loop'], node.follow['switch']) if n]
-        if len(follows) >= 1:
+        if follows := [
+            n for n in (node.follow['loop'], node.follow['switch']) if n
+        ]:
             follow = min(follows, key=lambda x: x.num)
             node.follow['if'] = follow
 

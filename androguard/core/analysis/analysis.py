@@ -12,10 +12,7 @@ import networkx as nx
 
 log = logging.getLogger("androguard.analysis")
 
-BasicOPCODES = []
-for i in dvm.BRANCH_DVM_OPCODES:
-    BasicOPCODES.append(re.compile(i))
-
+BasicOPCODES = [re.compile(i) for i in dvm.BRANCH_DVM_OPCODES]
 # Flags used in :class:`ClassAnalysis`.
 REF_NEW_INSTANCE = 0
 REF_CLASS_USAGE = 1
@@ -155,10 +152,7 @@ class DVMBasicBlock:
 
             :rtype: None or an Instruction
         """
-        if idx in self.special_ins:
-            return self.special_ins[idx]
-        else:
-            return None
+        return self.special_ins[idx] if idx in self.special_ins else None
 
     def get_exception_analysis(self):
         return self.exception_analysis
@@ -186,17 +180,13 @@ class BasicBlocks:
         return self.bb.pop(idx)
 
     def get_basic_block(self, idx):
-        for i in self.bb:
-            if i.get_start() <= idx < i.get_end():
-                return i
-        return None
+        return next((i for i in self.bb if i.get_start() <= idx < i.get_end()), None)
 
     def get(self):
         """
             :rtype: return each basic block (:class:`DVMBasicBlock` object)
         """
-        for i in self.bb:
-            yield i
+        yield from self.bb
 
     def gets(self):
         """
@@ -261,8 +251,7 @@ class Exceptions:
         return self.exceptions
 
     def get(self):
-        for i in self.exceptions:
-            yield i
+        yield from self.exceptions
 
 
 class MethodAnalysis:
@@ -309,10 +298,8 @@ class MethodAnalysis:
         excepts = dvm.determineException(self.__vm, self.method)
         for i in excepts:
             l.extend([i[0]])
-            for handler in i[2:]:
-                l.append(handler[1])
-
-        log.debug("Creating basic blocks in %s" % self.method)
+            l.extend(handler[1] for handler in i[2:])
+        log.debug(f"Creating basic blocks in {self.method}")
         idx = 0
         for i in bc.get_instructions():
             # index is a destination
@@ -383,17 +370,15 @@ class MethodAnalysis:
             nb_args = len(args)
 
             start_reg = reg_len - nb_args
-            args = ["{} v{}".format(a, start_reg + i) for i, a in enumerate(args)]
+            args = [f"{a} v{start_reg + i}" for i, a in enumerate(args)]
 
-        print("METHOD {} {} {} ({}){}".format(
-              self.method.get_class_name(),
-              self.method.get_access_flags_string(),
-              self.method.get_name(),
-              ", ".join(args), ret))
+        print(
+            f'METHOD {self.method.get_class_name()} {self.method.get_access_flags_string()} {self.method.get_name()} ({", ".join(args)}){ret}'
+        )
         bytecode.PrettyShow(self, self.basic_blocks.gets(), self.method.notes)
 
     def __repr__(self):
-        return "<analysis.MethodAnalysis {}>".format(self.method)
+        return f"<analysis.MethodAnalysis {self.method}>"
 
 
 class StringAnalysis:
@@ -434,10 +419,10 @@ class StringAnalysis:
     def __repr__(self):
         # TODO should remove all chars that are not pleasent. e.g. newlines
         if len(self.get_value()) > 20:
-            s = "'{}'...".format(self.get_value()[:20])
+            s = f"'{self.get_value()[:20]}'..."
         else:
-            s = "'{}'".format(self.get_value())
-        return "<analysis.StringAnalysis {}>".format(s)
+            s = f"'{self.get_value()}'"
+        return f"<analysis.StringAnalysis {s}>"
 
 
 class MethodClassAnalysis:
@@ -539,20 +524,18 @@ class MethodClassAnalysis:
             # Method must be external to be an API
             return False
 
-        # Packages found at https://developer.android.com/reference/packages.html
-        api_candidates = ["Landroid/", "Lcom/android/internal/util", "Ldalvik/", "Ljava/", "Ljavax/", "Lorg/apache/",
-                          "Lorg/json/", "Lorg/w3c/dom/", "Lorg/xml/sax", "Lorg/xmlpull/v1/", "Ljunit/"]
-
         if self.apilist:
             # FIXME: This will not work... need to introduce a name for lookup (like EncodedMethod.__str__ but without
             # the offsert! Such a name is also needed for the lookup in permissions
             return self.method.get_name() in self.apilist
-        else:
-            for candidate in api_candidates:
-                if self.method.get_class_name().startswith(candidate):
-                    return True
+        # Packages found at https://developer.android.com/reference/packages.html
+        api_candidates = ["Landroid/", "Lcom/android/internal/util", "Ldalvik/", "Ljava/", "Ljavax/", "Lorg/apache/",
+                          "Lorg/json/", "Lorg/w3c/dom/", "Lorg/xml/sax", "Lorg/xmlpull/v1/", "Ljunit/"]
 
-        return False
+        return any(
+            self.method.get_class_name().startswith(candidate)
+            for candidate in api_candidates
+        )
 
     def get_method(self):
         """
@@ -575,8 +558,7 @@ class MethodClassAnalysis:
         return data
 
     def __repr__(self):
-        return "<analysis.MethodClassAnalysis {}{}>".format(self.method,
-               " EXTERNAL" if isinstance(self.method, ExternalMethod) else "")
+        return f'<analysis.MethodClassAnalysis {self.method}{" EXTERNAL" if isinstance(self.method, ExternalMethod) else ""}>'
 
 
 class FieldClassAnalysis:
@@ -628,7 +610,7 @@ class FieldClassAnalysis:
         return data
 
     def __repr__(self):
-        return "<analysis.FieldClassAnalysis {}->{}>".format(self.field.class_name, self.field.name)
+        return f"<analysis.FieldClassAnalysis {self.field.class_name}->{self.field.name}>"
 
 
 class ExternalClass:
@@ -680,7 +662,7 @@ class ExternalClass:
         return self.name
 
     def __repr__(self):
-        return "<analysis.ExternalClass {}>".format(self.name)
+        return f"<analysis.ExternalClass {self.name}>"
 
 
 class ExternalMethod:
@@ -705,10 +687,10 @@ class ExternalMethod:
         return ""
 
     def __str__(self):
-        return "%s->%s%s" % (self.class_name, self.name, ''.join(self.descriptor))
+        return f"{self.class_name}->{self.name}{''.join(self.descriptor)}"
 
     def __repr__(self):
-        return "<analysis.ExternalMethod {}>".format(self.__str__())
+        return f"<analysis.ExternalMethod {self.__str__()}>"
 
 
 class ClassAnalysis:
@@ -745,10 +727,7 @@ class ClassAnalysis:
 
         :return: a list of Interface names
         """
-        if self.is_external():
-            return []
-
-        return self.orig_class.get_interfaces()
+        return [] if self.is_external() else self.orig_class.get_interfaces()
 
     @property
     def extends(self):
@@ -792,22 +771,20 @@ class ClassAnalysis:
         :return: boolean
         """
 
-        # Packages found at https://developer.android.com/reference/packages.html
-        api_candidates = ["Landroid/", "Lcom/android/internal/util", "Ldalvik/", "Ljava/", "Ljavax/", "Lorg/apache/",
-                          "Lorg/json/", "Lorg/w3c/dom/", "Lorg/xml/sax", "Lorg/xmlpull/v1/", "Ljunit/"]
-
         if not self.is_external():
             # API must be external
             return False
 
         if self.apilist:
             return self.orig_class.get_name() in self.apilist
-        else:
-            for candidate in api_candidates:
-                if self.orig_class.get_name().startswith(candidate):
-                    return True
+        # Packages found at https://developer.android.com/reference/packages.html
+        api_candidates = ["Landroid/", "Lcom/android/internal/util", "Ldalvik/", "Ljava/", "Ljavax/", "Lorg/apache/",
+                          "Lorg/json/", "Lorg/w3c/dom/", "Lorg/xml/sax", "Lorg/xmlpull/v1/", "Ljunit/"]
 
-        return False
+        return any(
+            self.orig_class.get_name().startswith(candidate)
+            for candidate in api_candidates
+        )
 
     def get_methods(self):
         """
@@ -932,15 +909,14 @@ class ClassAnalysis:
         return self.orig_class
 
     def __repr__(self):
-        return "<analysis.ClassAnalysis {}{}>".format(self.orig_class.get_name(),
-                " EXTERNAL" if isinstance(self.orig_class, ExternalClass) else "")
+        return f'<analysis.ClassAnalysis {self.orig_class.get_name()}{" EXTERNAL" if isinstance(self.orig_class, ExternalClass) else ""}>'
 
     def __str__(self):
         # Print only instanceiations from other classes here
         # TODO also method xref and field xref should be printed?
         data = "XREFto for %s\n" % self.orig_class
         for ref_class in self.xrefto:
-            data += str(ref_class.get_vm_class().get_name()) + " "
+            data += f"{str(ref_class.get_vm_class().get_name())} "
             data += "in\n"
             for ref_kind, ref_method, ref_offset in self.xrefto[ref_class]:
                 data += "%d %s 0x%x\n" % (ref_kind, ref_method, ref_offset)
@@ -949,7 +925,7 @@ class ClassAnalysis:
 
         data += "XREFFrom for %s\n" % self.orig_class
         for ref_class in self.xreffrom:
-            data += str(ref_class.get_vm_class().get_name()) + " "
+            data += f"{str(ref_class.get_vm_class().get_name())} "
             data += "in\n"
             for ref_kind, ref_method, ref_offset in self.xreffrom[ref_class]:
                 data += "%d %s 0x%x\n" % (ref_kind, ref_method, ref_offset)
@@ -1009,8 +985,7 @@ class Analysis:
         Used by create_xref().
         """
         for vm in self.vms:
-            for current_class in vm.get_classes():
-                yield current_class
+            yield from vm.get_classes()
 
     def create_xref(self):
         """
@@ -1053,9 +1028,9 @@ class Analysis:
         """
         cur_cls_name = current_class.get_name()
 
-        log.debug("Creating XREF/DREF for %s" % cur_cls_name)
+        log.debug(f"Creating XREF/DREF for {cur_cls_name}")
         for current_method in current_class.get_methods():
-            log.debug("Creating XREF for %s" % current_method)
+            log.debug(f"Creating XREF for {current_method}")
 
             code = current_method.get_code()
             if code is None:
@@ -1086,11 +1061,9 @@ class Analysis:
                         cur_cls.AddXrefTo(ref_type[op_value], oth_cls, current_method, off)
                         oth_cls.AddXrefFrom(ref_type[op_value], cur_cls, current_method, off)
 
-                # 2) check for method calls: invoke-* (0x6e ... 0x72), invoke-xxx/range (0x74 ... 0x78)
                 elif (0x6e <= op_value <= 0x72) or (0x74 <= op_value <= 0x78):
                     idx_meth = instruction.get_ref_kind()
-                    method_info = instruction.cm.vm.get_cm_method(idx_meth)
-                    if method_info:
+                    if method_info := instruction.cm.vm.get_cm_method(idx_meth):
                         class_info = method_info[0]
 
                         for vm in self.vms:
@@ -1114,7 +1087,6 @@ class Analysis:
                             self.classes[cur_cls_name].AddXrefTo(REF_CLASS_USAGE, self.classes[class_info], method_item, off)
                             self.classes[class_info].AddXrefFrom(REF_CLASS_USAGE, self.classes[cur_cls_name], current_method, off)
 
-                # 3) check for string usage: const-string (0x1a), const-string/jumbo (0x1b)
                 elif 0x1a <= op_value <= 0x1b:
                     string_value = instruction.cm.vm.get_cm_string(instruction.get_ref_kind())
                     if string_value not in self.strings:
@@ -1124,15 +1096,12 @@ class Analysis:
                     # TODO there is no XrefTo in the method for a string
                     self.strings[string_value].AddXrefFrom(self.classes[cur_cls_name], current_method)
 
-                # TODO maybe we should add a step 3a here and check for all const fields. You can then xref for integers etc!
-
-                # 4) check for field usage: i*op (0x52 ... 0x5f), s*op (0x60 ... 0x6d)
                 elif 0x52 <= op_value <= 0x6d:
                     idx_field = instruction.get_ref_kind()
                     field_info = instruction.cm.vm.get_cm_field(idx_field)
-                    field_item = instruction.cm.vm.get_field_descriptor(field_info[0], field_info[2], field_info[1])
-                    # TODO: The bytecode offset is stored everywhere but not here?
-                    if field_item:
+                    if field_item := instruction.cm.vm.get_field_descriptor(
+                        field_info[0], field_info[2], field_info[1]
+                    ):
                         if (0x52 <= op_value <= 0x58) or (0x60 <= op_value <= 0x66):
                             # read access to a field
                             self.classes[cur_cls_name].AddFXrefRead(current_method, self.classes[cur_cls_name], field_item)
@@ -1150,10 +1119,7 @@ class Analysis:
         :param method: :class:`EncodedMethod` to search for
         :return: :class:`MethodAnalysis` object for the given method, or None if method was not found
         """
-        if method in self.methods:
-            return self.methods[method]
-        else:
-            return None
+        return self.methods[method] if method in self.methods else None
 
     def get_method_by_name(self, class_name, method_name, method_descriptor):
         """
@@ -1182,8 +1148,7 @@ class Analysis:
         :param method: :class:`EncodedMethod`
         :return: :class:`MethodClassAnalysis` for the given method or None, if method was not found
         """
-        class_analysis = self.get_class_analysis(method.get_class_name())
-        if class_analysis:
+        if class_analysis := self.get_class_analysis(method.get_class_name()):
             return class_analysis.get_method_analysis(method)
         return None
 
@@ -1199,8 +1164,9 @@ class Analysis:
         :param method_descriptor: method descriptor, for example `'(I I)V'`
         :return: :class:`MethodClassAnalysis`
         """
-        method = self.get_method_by_name(class_name, method_name, method_descriptor)
-        if method:
+        if method := self.get_method_by_name(
+            class_name, method_name, method_descriptor
+        ):
             return self.get_method_analysis(method)
         return None
 
@@ -1211,8 +1177,7 @@ class Analysis:
         :param field: TODO
         :return: :class:`FieldClassAnalysis`
         """
-        class_analysis = self.get_class_analysis(field.get_class_name())
-        if class_analysis:
+        if class_analysis := self.get_class_analysis(field.get_class_name()):
             return class_analysis.get_field_analysis(field)
         return None
 
@@ -1288,8 +1253,7 @@ class Analysis:
 
         """
         for c in self.classes.values():
-            for m in c.get_methods():
-                yield m
+            yield from c.get_methods()
 
     def get_fields(self):
         """
@@ -1297,8 +1261,7 @@ class Analysis:
 
         """
         for c in self.classes.values():
-            for f in c.get_fields():
-                yield f
+            yield from c.get_fields()
 
     def find_classes(self, name=".*", no_external=False):
         """
@@ -1376,7 +1339,7 @@ class Analysis:
                            yield f
 
     def __repr__(self):
-        return "<analysis.Analysis VMs: {}, Classes: {}, Strings: {}>".format(len(self.vms), len(self.classes), len(self.strings))
+        return f"<analysis.Analysis VMs: {len(self.vms)}, Classes: {len(self.classes)}, Strings: {len(self.strings)}>"
 
     def get_call_graph(self, classname=".*", methodname=".*", descriptor=".*",
                        accessflags=".*", no_isolated=False, entry_points=[]):
@@ -1404,16 +1367,8 @@ class Analysis:
             Wrapper to add methods to a graph
             """
             if method not in G.node:
-                if isinstance(method, ExternalMethod):
-                    is_external = True
-                else:
-                    is_external = False
-
-                if method.get_class_name() in _entry_points:
-                    is_entry_point = True
-                else:
-                    is_entry_point = False
-
+                is_external = isinstance(method, ExternalMethod)
+                is_entry_point = method.get_class_name() in _entry_points
                 G.add_node(method, external=is_external, entrypoint=is_entry_point)
 
         CG = nx.DiGraph()
@@ -1461,9 +1416,9 @@ class Analysis:
         """
         # TODO: it would be fun to have the classes organized like the packages. I.e. you could do dx.CLASS_xx.yyy.zzz
         for cls in self.get_classes():
-            name = "CLASS_" + bytecode.FormatClassToPython(cls.name)
+            name = f"CLASS_{bytecode.FormatClassToPython(cls.name)}"
             if hasattr(self, name):
-                log.warning("Already existing class {}!".format(name))
+                log.warning(f"Already existing class {name}!")
             setattr(self, name, cls)
 
             for meth in cls.get_methods():
@@ -1472,17 +1427,17 @@ class Analysis:
                     _, method_name = bytecode.get_package_class_name(cls.name)
 
                 # FIXME this naming schema is not very good... but to describe a method uniquely, we need all of it
-                mname = "METH_" + method_name + "_" + bytecode.FormatDescriptorToPython(meth.access) + "_" + bytecode.FormatDescriptorToPython(meth.descriptor)
+                mname = f"METH_{method_name}_{bytecode.FormatDescriptorToPython(meth.access)}_{bytecode.FormatDescriptorToPython(meth.descriptor)}"
                 if hasattr(cls, mname):
-                    log.warning("already existing method: {} at class {}".format(mname, name))
+                    log.warning(f"already existing method: {mname} at class {name}")
                 setattr(cls, mname, meth)
 
             # FIXME: syntetic classes produce problems here.
             # If the field name is the same in the parent as in the syntetic one, we can only add one!
             for field in cls.get_fields():
-                mname = "FIELD_" + bytecode.FormatNameToPython(field.name)
+                mname = f"FIELD_{bytecode.FormatNameToPython(field.name)}"
                 if hasattr(cls, mname):
-                    log.warning("already existing field: {} at class {}".format(mname, name))
+                    log.warning(f"already existing field: {mname} at class {name}")
                 setattr(cls, mname, field)
 
 

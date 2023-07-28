@@ -65,15 +65,17 @@ class AndroAuto:
     """
 
     def __init__(self, settings):
-        if not "my" in settings:
+        if "my" not in settings:
             raise ValueError("'my' object not found in settings!")
 
-        if not "log" in settings:
+        if "log" not in settings:
             raise ValueError("'log' object not found in settings!")
 
-        if not "max_fetcher" in settings:
+        if "max_fetcher" not in settings:
             settings["max_fetcher"] = multiprocessing.cpu_count()
-            l.warning("No maximum number of threads found, setting MAX_CPU: {}".format(settings["max_fetcher"]))
+            l.warning(
+                f'No maximum number of threads found, setting MAX_CPU: {settings["max_fetcher"]}'
+            )
 
         self.settings = settings
 

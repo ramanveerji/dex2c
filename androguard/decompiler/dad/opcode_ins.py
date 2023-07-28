@@ -61,12 +61,8 @@ class Op(object):
 
 
 def get_variables(vmap, *variables):
-    res = []
-    for variable in variables:
-        res.append(vmap.setdefault(variable, Variable(variable)))
-    if len(res) == 1:
-        return res[0]
-    return res
+    res = [vmap.setdefault(variable, Variable(variable)) for variable in variables]
+    return res[0] if len(res) == 1 else res
 
 
 def assign_const(dest_reg, cst, vmap):
@@ -1006,7 +1002,7 @@ def invokesuperrange(ins, vmap, ret):
         returned = ret.new()
     else:
         returned = base
-        ret.set_to(base)
+        ret.set_to(returned)
     superclass = BaseClass('super')
     exp = InvokeRangeInstruction(cls_name, name, ret_type, param_type,
                                  [superclass] + args, method.get_triple())
@@ -1029,7 +1025,7 @@ def invokedirectrange(ins, vmap, ret):
         returned = ret.new()
     else:
         returned = base
-        ret.set_to(base)
+        ret.set_to(returned)
     exp = InvokeRangeInstruction(cls_name, name, ret_type, param_type,
                                  [this_arg] + args, method.get_triple())
     return AssignExpression(returned, exp)

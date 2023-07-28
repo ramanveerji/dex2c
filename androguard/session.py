@@ -59,9 +59,9 @@ def Save(session, filename=None):
             pickle.dump(session, fd)
         saved = True
     except RecursionError:
-        log.exception("Recursion Limit hit while saving. "
-                      "Current Recursion limit: {}. "
-                      "Please report this error!".format(sys.getrecursionlimit()))
+        log.exception(
+            f"Recursion Limit hit while saving. Current Recursion limit: {sys.getrecursionlimit()}. Please report this error!"
+        )
         # Remove partially written file
         os.unlink(filename)
 
@@ -136,8 +136,8 @@ class Session:
 
     def _setup_objects(self):
         self.analyzed_files = collections.defaultdict(list)
-        self.analyzed_digest = dict()
-        self.analyzed_apk = dict()
+        self.analyzed_digest = {}
+        self.analyzed_apk = {}
 
         # Stores Analysis Objects
         # needs to be ordered to return the outermost element when searching for
@@ -147,7 +147,7 @@ class Session:
         # Dict of digest and DalvikVMFormat/DalvikOdexFormat
         # Actually not needed, as we have Analysis objects which store the DEX
         # files as well, but we do not remove it here for legacy reasons
-        self.analyzed_dex = dict()
+        self.analyzed_dex = {}
 
     def reset(self):
         """
@@ -168,17 +168,17 @@ class Session:
         Print information to stdout about the current session.
         Gets all APKs, all DEX files and all Analysis objects.
         """
-        print("APKs in Session: {}".format(len(self.analyzed_apk)))
+        print(f"APKs in Session: {len(self.analyzed_apk)}")
         for d, a in self.analyzed_apk.items():
-            print("\t{}: {}".format(d, a))
+            print(f"\t{d}: {a}")
 
-        print("DEXs in Session: {}".format(len(self.analyzed_dex)))
+        print(f"DEXs in Session: {len(self.analyzed_dex)}")
         for d, dex in self.analyzed_dex.items():
-            print("\t{}: {}".format(d, dex))
+            print(f"\t{d}: {dex}")
 
-        print("Analysis in Session: {}".format(len(self.analyzed_vms)))
+        print(f"Analysis in Session: {len(self.analyzed_vms)}")
         for d, a in self.analyzed_vms.items():
-            print("\t{}: {}".format(d, a))
+            print(f"\t{d}: {a}")
 
     def addAPK(self, filename, data):
         """
@@ -189,7 +189,7 @@ class Session:
         :return: a tuple of SHA256 Checksum and APK Object
         """
         digest = hashlib.sha256(data).hexdigest()
-        log.debug("add APK:%s" % digest)
+        log.debug(f"add APK:{digest}")
         apk = APK(data, True)
         self.analyzed_apk[digest] = [apk]
         self.analyzed_files[filename].append(digest)
@@ -202,7 +202,7 @@ class Session:
             # we throw away the output... FIXME?
             self.addDEX(filename, dex, dx)
 
-        log.debug("added APK:%s" % digest)
+        log.debug(f"added APK:{digest}")
         return digest, apk
 
     def addDEX(self, filename, data, dx=None):
@@ -215,11 +215,11 @@ class Session:
         :return: A tuple of SHA256 Hash, DalvikVMFormat Object and Analysis object
         """
         digest = hashlib.sha256(data).hexdigest()
-        log.debug("add DEX:%s" % digest)
+        log.debug(f"add DEX:{digest}")
 
         log.debug("Parsing format ...")
         d = DalvikVMFormat(data)
-        log.debug("added DEX:%s" % digest)
+        log.debug(f"added DEX:{digest}")
 
         self.analyzed_files[filename].append(digest)
         self.analyzed_digest[digest] = filename
@@ -250,9 +250,9 @@ class Session:
         Add an ODEX file to the session and run the analysis
         """
         digest = hashlib.sha256(data).hexdigest()
-        log.debug("add DEY:%s" % digest)
+        log.debug(f"add DEY:{digest}")
         d = DalvikOdexVMFormat(data)
-        log.debug("added DEY:%s" % digest)
+        log.debug(f"added DEY:{digest}")
 
         self.analyzed_files[filename].append(digest)
         self.analyzed_digest[digest] = filename
@@ -295,12 +295,12 @@ class Session:
         :return: the sha256 of the file or None on failure
         """
         if not raw_data:
-            log.debug("Loading file from '{}'".format(filename))
+            log.debug(f"Loading file from '{filename}'")
             with open(filename, "rb") as fp:
                 raw_data = fp.read()
 
         ret = androconf.is_android_raw(raw_data)
-        log.debug("Found filetype: '{}'".format(ret))
+        log.debug(f"Found filetype: '{ret}'")
         if not ret:
             return None
 
@@ -360,10 +360,14 @@ class Session:
         :param current_class: ClassDefItem
         :returns: None if class was not found or the filename
         """
-        for digest, dx in self.analyzed_vms.items():
-            if dx.is_class_present(current_class.get_name()):
-                return self.analyzed_digest[digest]
-        return None
+        return next(
+            (
+                self.analyzed_digest[digest]
+                for digest, dx in self.analyzed_vms.items()
+                if dx.is_class_present(current_class.get_name())
+            ),
+            None,
+        )
 
     def get_digest_by_class(self, current_class):
         """
@@ -373,10 +377,14 @@ class Session:
         For example, if you analyzed an APK, this should return the digest of
         the APK and not of the DEX file.
         """
-        for digest, dx in self.analyzed_vms.items():
-            if dx.is_class_present(current_class.get_name()):
-                return digest
-        return None
+        return next(
+            (
+                digest
+                for digest, dx in self.analyzed_vms.items()
+                if dx.is_class_present(current_class.get_name())
+            ),
+            None,
+        )
 
     def get_strings(self):
         """
@@ -407,8 +415,7 @@ class Session:
         Yields a list of tuples of SHA256 hash of the APK and APK objects
         of all analyzed APKs in the Session.
         """
-        for digest, a in self.analyzed_apk.items():
-            yield digest, a
+        yield from self.analyzed_apk.items()
 
     def get_objects_apk(self, filename=None, digest=None):
         """
@@ -438,12 +445,11 @@ class Session:
             raise ValueError("Must give at least filename or digest!")
 
         if digest is None:
-            digests = self.analyzed_files.get(filename)
-            # Negate to reduce tree
-            if not digests:
-                return None, None, None
-            digest = digests[0]
+            if digests := self.analyzed_files.get(filename):
+                digest = digests[0]
 
+            else:
+                return None, None, None
         a = self.analyzed_apk[digest][0]
         dx = self.analyzed_vms[digest]
         return a, dx.vms, dx

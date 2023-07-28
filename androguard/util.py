@@ -58,4 +58,9 @@ def get_certificate_name_string(name, short=False, delimiter=', '):
         'name_distinguisher': ("nameDistinguisher", "nameDistinguisher"),
         'organization_identifier': ("organizationIdentifier", "organizationIdentifier"),
     }
-    return delimiter.join(["{}={}".format(_.get(attr, (attr, attr))[0 if short else 1], name[attr]) for attr in name])
+    return delimiter.join(
+        [
+            f"{_.get(attr, (attr, attr))[0 if short else 1]}={name[attr]}"
+            for attr in name
+        ]
+    )

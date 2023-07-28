@@ -44,9 +44,7 @@ def auto_vm(filename):
     ret = androconf.is_android(filename)
     if ret == "APK":
         return dvm.DalvikVMFormat(apk.APK(filename).get_dex())
-    elif ret == "DEX":
-        return dvm.DalvikVMFormat(read(filename))
-    elif ret == "DEY":
+    elif ret in ["DEX", "DEY"]:
         return dvm.DalvikVMFormat(read(filename))
     return None
 
@@ -63,11 +61,11 @@ class RegisterAllocator(object):
         assert var.get_type()
         atype = util.get_cdecl_type(var.get_type())
         if (register, atype) not in self.slots:
-            logger.debug("%s -> v%s:%s" % (var, self.next_name, atype))
+            logger.debug(f"{var} -> v{self.next_name}:{atype}")
             self.slots[(register, atype)] = self.next_name
             self.next_name += 1
         else:
-            logger.debug("%s -> v%s:%s" % (var, self.slots[(register, atype)], atype))
+            logger.debug(f"{var} -> v{self.slots[register, atype]}:{atype}")
         return self.slots[(register, atype)]
 
 
@@ -95,12 +93,10 @@ class IrMethod(object):
         print(self.get_source())
 
     def get_source(self):
-        if self.writer:
-            return str(self.writer)
-        return ""
+        return str(self.writer) if self.writer else ""
 
     def __repr__(self):
-        return "class IrMethod(object): %s" % self.name
+        return f"class IrMethod(object): {self.name}"
 
 
 class IrBuilder(object):
@@ -127,11 +123,10 @@ class IrBuilder(object):
         self.curret_block = None
 
         self.var_versions = defaultdict(int)
-        
+
         self.obfus = obfus
 
-        code = self.method.get_code()
-        if code:
+        if code := self.method.get_code():
             start = code.registers_size - code.ins_size
             if "static" not in self.access:
                 self.lparams.append(start)
@@ -146,7 +141,7 @@ class IrBuilder(object):
             from androguard.core import bytecode
 
             bytecode.method2png(
-                "graphs/%s#%s.png" % (self.cls_name.split("/")[-1][:-1], self.name),
+                f'graphs/{self.cls_name.split("/")[-1][:-1]}#{self.name}.png',
                 methanalysis,
             )
 
@@ -170,7 +165,7 @@ class IrBuilder(object):
 
         self.build()
         if DEBUG:
-            util.create_png(self.cls_name, self.name + "ir", graph, "blocks")
+            util.create_png(self.cls_name, f"{self.name}ir", graph, "blocks")
 
         irmethod = IrMethod(graph, self.method)
         irmethod.rtype = self.get_return_type()
@@ -200,13 +195,11 @@ class IrBuilder(object):
         self.remove_trivial_phi()
         if DEBUG:
             util.create_png(
-                self.cls_name, self.name + "_before_hack", self.graph, "blocks"
+                self.cls_name, f"{self.name}_before_hack", self.graph, "blocks"
             )
         self.hack_polymorphic_constant()
         if DEBUG:
-            util.create_png(
-                self.cls_name, self.name + "_after_hack", self.graph, "blocks"
-            )
+            util.create_png(self.cls_name, f"{self.name}_after_hack", self.graph, "blocks")
         self.infer_type()
         self.fix_const_type()
         self.verify_operand_type()
@@ -231,7 +224,7 @@ class IrBuilder(object):
             for ins in node.get_instr_list():
                 var = ins.get_value()
                 if var and var.get_type() is None:
-                    raise Exception("unkonw type %s" % var)
+                    raise Exception(f"unkonw type {var}")
 
     def verify_phi_operand_type(self):
         for node in self.graph.rpo:
@@ -247,18 +240,17 @@ class IrBuilder(object):
                     elif util.is_ref(same_type) and util.is_ref(op_type):
                         continue
                     else:
-                        raise Exception(
-                            "inconsistency phi operand type %s %s %s"
-                            % (phi, same_type, op_type)
-                        )
+                        raise Exception(f"inconsistency phi operand type {phi} {same_type} {op_type}")
 
     def hack_polymorphic_constant(self):
         nodes = self.graph.compute_block_order()
         todo_list = []
         for node in nodes:
-            for ins in node.get_instr_list():
-                if isinstance(ins, LoadConstant) and ins.get_value_type() is None:
-                    todo_list.append(ins)
+            todo_list.extend(
+                ins
+                for ins in node.get_instr_list()
+                if isinstance(ins, LoadConstant) and ins.get_value_type() is None
+            )
         while todo_list:
             ins = todo_list.pop(0)
             bb = ins.parent
@@ -295,14 +287,13 @@ class IrBuilder(object):
             for ins in node.get_instr_list():
                 if isinstance(ins, LoadConstant) and ins.get_value_type() is None:
                     if -2147483648 <= ins.get_cst().get_constant() <= 2147483647:
-                        Changed = True
-                        logger.debug("Set constant type to int: %s" % ins)
+                        logger.debug(f"Set constant type to int: {ins}")
                         ins.set_value_type("I")
                     else:
-                        Changed = True
-                        logger.debug("Set constant type to long: %s" % ins)
+                        logger.debug(f"Set constant type to long: {ins}")
                         ins.set_value_type("J")
 
+                    Changed = True
         if Changed:
             self.infer_type()
 
@@ -312,7 +303,7 @@ class IrBuilder(object):
             for ins in node.get_instr_list():
                 var = ins.get_value()
                 if var is not None:
-                    print("Type: %s %s" % (var, var.get_type()))
+                    print(f"Type: {var} {var.get_type()}")
 
     def add_var_to_decl(self):
         entry = self.graph.entry
@@ -323,16 +314,13 @@ class IrBuilder(object):
                 if var is not None:
                     entry.var_to_declare.append(var)
 
-                clz = ins.get_class()
-                if clz:
+                if clz := ins.get_class():
                     entry.class_to_declare.append(clz)
 
-                field = ins.get_field()
-                if field:
+                if field := ins.get_field():
                     entry.field_to_declare.append(field)
 
-                method = ins.get_call_method()
-                if method:
+                if method := ins.get_call_method():
                     entry.method_to_declare.append(method)
 
     def try_seal_block(self, block):
@@ -407,8 +395,7 @@ class IrBuilder(object):
 
     def define_params(self):
         entry = self.graph.entry
-        code = self.method.get_code()
-        if code:
+        if code := self.method.get_code():
             start = code.registers_size - code.ins_size
             if "static" not in self.access:
                 param = self.new_ssa_variable(start)
@@ -437,16 +424,13 @@ class IrBuilder(object):
 
     def __repr__(self):
         # return 'Method %s' % self.name
-        return "class DvMethod(object): %s" % self.name
+        return f"class DvMethod(object): {self.name}"
 
 
 class DvClass(object):
     def __init__(self, dvclass, vma):
         name = dvclass.get_name()
-        if name.find("/") > 0:
-            pckg, name = name.rsplit("/", 1)
-        else:
-            pckg, name = "", name
+        pckg, name = name.rsplit("/", 1) if name.find("/") > 0 else ("", name)
         self.package = pckg[1:].replace("/", ".")
         self.name = name[:-1]
 
@@ -497,28 +481,27 @@ class DvClass(object):
                 logger.warning("Error decompiling method %s: %s", self.methods[i], e)
 
     def get_source(self):
-        source = []
-        for method in self.methods:
-            if isinstance(method, IrMethod):
-                source.append(method.get_source())
+        source = [
+            method.get_source()
+            for method in self.methods
+            if isinstance(method, IrMethod)
+        ]
         return "".join(source)
 
     def show_source(self):
         print(self.get_source())
 
     def __repr__(self):
-        return "Class(%s)" % self.name
+        return f"Class({self.name})"
 
 
 class DvMachine(object):
     def __init__(self, name):
         vm = auto_vm(name)
         if vm is None:
-            raise ValueError("Format not recognised: %s" % name)
+            raise ValueError(f"Format not recognised: {name}")
         self.vma = analysis.Analysis(vm)
-        self.classes = dict(
-            (dvclass.get_name(), dvclass) for dvclass in vm.get_classes()
-        )
+        self.classes = {dvclass.get_name(): dvclass for dvclass in vm.get_classes()}
 
     def get_classes(self):
         return list(self.classes.keys())
@@ -562,11 +545,7 @@ class Dex2C:
     def get_source_method(self, m):
         mx = self.vmx.get_method(m)
         z = IrBuilder(mx, self.obfus)
-        irmethod = z.process()
-        if irmethod:
-            return irmethod.get_source()
-        else:
-            return None
+        return irmethod.get_source() if (irmethod := z.process()) else None
 
     def get_source_class(self, _class):
         c = DvClass(_class, self.vmx)

@@ -128,11 +128,7 @@ def get_access_flags_string(value):
 
     :rtype: string
     """
-    flags = []
-    for k, v in ACCESS_FLAGS.items():
-        if (k & value) == k:
-            flags.append(v)
-
+    flags = [v for k, v in ACCESS_FLAGS.items() if (k & value) == k]
     return " ".join(flags)
 
 
@@ -148,9 +144,9 @@ def get_type(atype, size=None):
             res = atype[1:-1].replace('/', '.')
         elif atype[0] == '[':
             if size is None:
-                res = '%s[]' % get_type(atype[1:])
+                res = f'{get_type(atype[1:])}[]'
             else:
-                res = '%s[%s]' % (get_type(atype[1:]), size)
+                res = f'{get_type(atype[1:])}[{size}]'
         else:
             res = atype
     return res
@@ -181,10 +177,7 @@ def clean_name_instruction(instruction):
     op_value = instruction.get_op_value()
 
     # goto range
-    if 0x28 <= op_value <= 0x2a:
-        return "goto"
-
-    return instruction.get_name()
+    return "goto" if 0x28 <= op_value <= 0x2a else instruction.get_name()
 
 
 def static_operand_instruction(instruction):
@@ -193,10 +186,10 @@ def static_operand_instruction(instruction):
     if isinstance(instruction, Instruction):
         # get instructions without registers
         for val in instruction.get_literals():
-            buff += "%s" % val
+            buff += f"{val}"
 
     op_value = instruction.get_op_value()
-    if op_value == 0x1a or op_value == 0x1b:
+    if op_value in [0x1A, 0x1B]:
         buff += instruction.get_string()
 
     return buff
@@ -224,14 +217,14 @@ def readuleb128(buff):
         if cur > 0x7f:
             cur = get_byte(buff)
             result |= (cur & 0x7f) << 14
-            if cur > 0x7f:
-                cur = get_byte(buff)
-                result |= (cur & 0x7f) << 21
-                if cur > 0x7f:
-                    cur = get_byte(buff)
-                    if cur > 0x0f:
-                        log.warning("possible error while decoding number")
-                    result |= cur << 28
+        if cur > 0x7f:
+            cur = get_byte(buff)
+            result |= (cur & 0x7f) << 21
+        if cur > 0x7f:
+            cur = get_byte(buff)
+            if cur > 0x0f:
+                log.warning("possible error while decoding number")
+            result |= cur << 28
 
     return result
 
@@ -257,7 +250,7 @@ def readsleb128(buff):
     result = 0
     shift = 0
 
-    for x in range(0, 5):
+    for _ in range(0, 5):
         cur = get_byte(buff)
         result |= (cur & 0x7f) << shift
         shift += 7
@@ -309,11 +302,7 @@ def writesleb128(value):
     hasMore = True
     buff = bytearray()
 
-    if (value & (-sys.maxsize - 1)) == 0:
-        end = 0
-    else:
-        end = -1
-
+    end = 0 if (value & (-sys.maxsize - 1)) == 0 else -1
     while hasMore:
         hasMore = (remaining != end) or ((remaining & 1) != ((value >> 6) & 1))
         tmp = 0
@@ -333,15 +322,12 @@ def determineNext(i, end, m):
     # throw + return*
     if (op_value == 0x27) or (0x0e <= op_value <= 0x11):
         return [-1]
-    # goto
     elif 0x28 <= op_value <= 0x2a:
         off = i.get_ref_off() * 2
         return [off + end]
-    # if
     elif 0x32 <= op_value <= 0x3d:
         off = i.get_ref_off() * 2
         return [end + i.get_length(), off + end]
-    # sparse/packed
     elif op_value in (0x2b, 0x2c):
         x = [end + i.get_length()]
 
@@ -351,9 +337,7 @@ def determineNext(i, end, m):
         data = code.get_ins_off(off + end)
 
         if data is not None:
-            for target in data.get_targets():
-                x.append(target * 2 + end)
-
+            x.extend(target * 2 + end for target in data.get_targets())
         return x
     return []
 
@@ -377,12 +361,9 @@ def determineException(vm, m):
     for try_item in m.get_code().get_tries():
         offset_handler = try_item.get_handler_off(
         ) + handler_catch_list.get_off()
-        if offset_handler in h_off:
-            h_off[offset_handler].append([try_item])
-        else:
+        if offset_handler not in h_off:
             h_off[offset_handler] = []
-            h_off[offset_handler].append([try_item])
-
+        h_off[offset_handler].append([try_item])
     # print m.get_name(), "\t HANDLER_CATCH_LIST SIZE", handler_catch_list.size, handler_catch_list.get_offset()
     for handler_catch in handler_catch_list.get_list():
         if handler_catch.get_off() not in h_off:
@@ -393,8 +374,8 @@ def determineException(vm, m):
 
     exceptions = []
     # print m.get_name(), h_off
-    for i in h_off:
-        for value in h_off[i]:
+    for value_ in h_off.values():
+        for value in value_:
             try_value = value[0]
 
             z = [try_value.get_start_addr() * 2,
@@ -406,10 +387,13 @@ def determineException(vm, m):
                 z.append(["Ljava/lang/Throwable;",
                           handler_catch.get_catch_all_addr() * 2])
 
-            for handler in handler_catch.get_handlers():
-                z.append([vm.get_cm_type(handler.get_type_idx()),
-                          handler.get_addr() * 2])
-
+            z.extend(
+                [
+                    vm.get_cm_type(handler.get_type_idx()),
+                    handler.get_addr() * 2,
+                ]
+                for handler in handler_catch.get_handlers()
+            )
             exceptions.append(z)
 
     # print m.get_name(), exceptions
@@ -631,8 +615,9 @@ class AnnotationSetItem(object):
         self.annotation_off_item = []
 
         self.size = unpack("=I", buff.read(4))[0]
-        for i in range(0, self.size):
-            self.annotation_off_item.append(AnnotationOffItem(buff, cm))
+        self.annotation_off_item.extend(
+            AnnotationOffItem(buff, cm) for _ in range(0, self.size)
+        )
 
     def get_annotation_off_item(self):
         """
@@ -664,12 +649,9 @@ class AnnotationSetItem(object):
                                          for i in self.annotation_off_item)
 
     def get_length(self):
-        length = len(self.get_obj())
-
-        for i in self.annotation_off_item:
-            length += i.get_length()
-
-        return length
+        return len(self.get_obj()) + sum(
+            i.get_length() for i in self.annotation_off_item
+        )
 
 
 class AnnotationSetRefItem(object):
@@ -727,8 +709,7 @@ class AnnotationSetRefList(object):
         self.list = []
 
         self.size = unpack("=I", buff.read(4))[0]
-        for i in range(0, self.size):
-            self.list.append(AnnotationSetRefItem(buff, cm))
+        self.list.extend(AnnotationSetRefItem(buff, cm) for _ in range(0, self.size))
 
     def get_list(self):
         """
@@ -753,7 +734,7 @@ class AnnotationSetRefList(object):
             i.show()
 
     def get_obj(self):
-        return [i for i in self.list]
+        return list(self.list)
 
     def get_raw(self):
         return pack("=I", self.size) + b''.join(i.get_raw() for i in self.list)
@@ -957,16 +938,19 @@ class AnnotationsDirectoryItem(object):
         self.annotated_parameters_size = unpack("=I", buff.read(4))[0]
 
         self.field_annotations = []
-        for i in range(0, self.annotated_fields_size):
-            self.field_annotations.append(FieldAnnotation(buff, cm))
-
+        self.field_annotations.extend(
+            FieldAnnotation(buff, cm) for _ in range(0, self.annotated_fields_size)
+        )
         self.method_annotations = []
-        for i in range(0, self.annotated_methods_size):
-            self.method_annotations.append(MethodAnnotation(buff, cm))
-
+        self.method_annotations.extend(
+            MethodAnnotation(buff, cm)
+            for _ in range(0, self.annotated_methods_size)
+        )
         self.parameter_annotations = []
-        for i in range(0, self.annotated_parameters_size):
-            self.parameter_annotations.append(ParameterAnnotation(buff, cm))
+        self.parameter_annotations.extend(
+            ParameterAnnotation(buff, cm)
+            for _ in range(0, self.annotated_parameters_size)
+        )
 
     def get_class_annotations_off(self):
         """
@@ -1067,10 +1051,9 @@ class AnnotationsDirectoryItem(object):
                b''.join(i.get_raw() for i in self.parameter_annotations)
 
     def get_length(self):
-        length = len(self.get_obj())
-        for i in self.field_annotations:
-            length += i.get_length()
-
+        length = len(self.get_obj()) + sum(
+            i.get_length() for i in self.field_annotations
+        )
         for i in self.method_annotations:
             length += i.get_length()
 
@@ -1140,9 +1123,7 @@ class TypeList(object):
         self.size = unpack("=I", buff.read(4))[0]
 
         self.list = []
-        for i in range(0, self.size):
-            self.list.append(TypeItem(buff, cm))
-
+        self.list.extend(TypeItem(buff, cm) for _ in range(0, self.size))
         self.pad = b""
         if self.size % 2 != 0:
             self.pad = buff.read(2)
@@ -1212,12 +1193,7 @@ class TypeList(object):
         return self.get_obj() + b''.join(i.get_raw() for i in self.list)
 
     def get_length(self):
-        length = len(self.get_obj())
-
-        for i in self.list:
-            length += i.get_length()
-
-        return length
+        return len(self.get_obj()) + sum(i.get_length() for i in self.list)
 
 
 class DBGBytecode(object):
@@ -1270,9 +1246,9 @@ class DebugInfoItem(object):
         # print "line", self.line_start, "params", self.parameters_size
 
         self.parameter_names = []
-        for i in range(0, self.parameters_size):
-            self.parameter_names.append(readuleb128p1(buff))
-
+        self.parameter_names.extend(
+            readuleb128p1(buff) for _ in range(0, self.parameters_size)
+        )
         self.bytecodes = []
         bcode = DBGBytecode(self.CM, get_byte(buff))
         self.bytecodes.append(bcode)
@@ -1303,9 +1279,6 @@ class DebugInfoItem(object):
                 pass
             elif bcode_value == DBG_SET_FILE:
                 bcode.add(readuleb128p1(buff), "u1")
-            else:  # bcode_value >= DBG_Special_Opcodes_BEGIN and bcode_value <= DBG_Special_Opcodes_END:
-                pass
-
             bcode = DBGBytecode(self.CM, get_byte(buff))
             self.bytecodes.append(bcode)
 
@@ -1337,12 +1310,9 @@ class DebugInfoItem(object):
         bytecode._PrintSubBanner("Debug Info Item")
         bytecode._PrintDefault("line_start=%d parameters_size=%d\n" %
                                (self.line_start, self.parameters_size))
-        nb = 0
-        for i in self.parameter_names:
+        for nb, i in enumerate(self.parameter_names):
             bytecode._PrintDefault("parameter_names[%d]=%s\n" %
                                    (nb, self.CM.get_string(i)))
-            nb += 1
-
         for i in self.bytecodes:
             i.show()
 
@@ -1410,8 +1380,7 @@ class EncodedArray(object):
         self.size = readuleb128(buff)
 
         self.values = []
-        for i in range(0, self.size):
-            self.values.append(EncodedValue(buff, cm))
+        self.values.extend(EncodedValue(buff, cm) for _ in range(0, self.size))
 
     def get_size(self):
         """
@@ -1444,11 +1413,7 @@ class EncodedArray(object):
         return self.get_obj() + b''.join(i.get_raw() for i in self.values)
 
     def get_length(self):
-        length = len(self.get_obj())
-        for i in self.values:
-            length += i.get_length()
-
-        return length
+        return len(self.get_obj()) + sum(i.get_length() for i in self.values)
 
 
 class EncodedValue(object):
@@ -1504,10 +1469,7 @@ class EncodedValue(object):
         elif self.value_type == VALUE_NULL:
             self.value = None
         elif self.value_type == VALUE_BOOLEAN:
-            if self.value_arg:
-                self.value = True
-            else:
-                self.value = False
+            self.value = bool(self.value_arg)
         else:
             log.warning("Unknown value 0x%x" % self.value_type)
 
@@ -1541,9 +1503,7 @@ class EncodedValue(object):
                                (self.val, self.value_arg, self.value_type))
 
     def get_obj(self):
-        if not isinstance(self.value, str):
-            return [self.value]
-        return []
+        return [self.value] if not isinstance(self.value, str) else []
 
     def get_raw(self):
         if self.raw_value is None:
@@ -1626,8 +1586,7 @@ class EncodedAnnotation(object):
         self.size = readuleb128(buff)
 
         self.elements = []
-        for i in range(0, self.size):
-            self.elements.append(AnnotationElement(buff, cm))
+        self.elements.extend(AnnotationElement(buff, cm) for _ in range(0, self.size))
 
     def get_type_idx(self):
         """
@@ -1662,19 +1621,16 @@ class EncodedAnnotation(object):
             i.show()
 
     def get_obj(self):
-        return [i for i in self.elements]
+        return list(self.elements)
 
     def get_raw(self):
         return writeuleb128(self.type_idx) + writeuleb128(self.size) + b''.join(
             i.get_raw() for i in self.elements)
 
     def get_length(self):
-        length = len(writeuleb128(self.type_idx) + writeuleb128(self.size))
-
-        for i in self.elements:
-            length += i.get_length()
-
-        return length
+        return len(writeuleb128(self.type_idx) + writeuleb128(self.size)) + sum(
+            i.get_length() for i in self.elements
+        )
 
 
 class AnnotationItem(object):
@@ -2020,8 +1976,7 @@ class TypeHIdItem(object):
         self.offset = buff.get_idx()
 
         self.type = []
-        for i in range(0, size):
-            self.type.append(TypeIdItem(buff, cm))
+        self.type.extend(TypeIdItem(buff, cm) for _ in range(0, size))
 
     def get_type(self):
         """
@@ -2053,16 +2008,13 @@ class TypeHIdItem(object):
             i.show()
 
     def get_obj(self):
-        return [i for i in self.type]
+        return list(self.type)
 
     def get_raw(self):
         return b''.join(i.get_raw() for i in self.type)
 
     def get_length(self):
-        length = 0
-        for i in self.type:
-            length += i.get_length()
-        return length
+        return sum(i.get_length() for i in self.type)
 
 
 class ProtoIdItem(object):
@@ -2144,7 +2096,7 @@ class ProtoIdItem(object):
         """
         if self.parameters_off_value is None:
             params = self.CM.get_type_list(self.parameters_off)
-            self.parameters_off_value = u'({})'.format(' '.join(params))
+            self.parameters_off_value = f"({' '.join(params)})"
         return self.parameters_off_value
 
     def show(self):
@@ -2189,8 +2141,7 @@ class ProtoHIdItem(object):
 
         self.proto = []
 
-        for i in range(0, size):
-            self.proto.append(ProtoIdItem(buff, cm))
+        self.proto.extend(ProtoIdItem(buff, cm) for _ in range(0, size))
 
     def set_off(self, off):
         self.offset = off
@@ -2214,16 +2165,13 @@ class ProtoHIdItem(object):
             i.show()
 
     def get_obj(self):
-        return [i for i in self.proto]
+        return list(self.proto)
 
     def get_raw(self):
         return b''.join(i.get_raw() for i in self.proto)
 
     def get_length(self):
-        length = 0
-        for i in self.proto:
-            length += i.get_length()
-        return length
+        return sum(i.get_length() for i in self.proto)
 
 
 class FieldIdItem(object):
@@ -2358,8 +2306,7 @@ class FieldHIdItem(object):
         self.offset = buff.get_idx()
 
         self.elem = []
-        for i in range(0, size):
-            self.elem.append(FieldIdItem(buff, cm))
+        self.elem.extend(FieldIdItem(buff, cm) for _ in range(0, size))
 
     def set_off(self, off):
         self.offset = off
@@ -2388,16 +2335,13 @@ class FieldHIdItem(object):
             nb = nb + 1
 
     def get_obj(self):
-        return [i for i in self.elem]
+        return list(self.elem)
 
     def get_raw(self):
         return b''.join(i.get_raw() for i in self.elem)
 
     def get_length(self):
-        length = 0
-        for i in self.elem:
-            length += i.get_length()
-        return length
+        return sum(i.get_length() for i in self.elem)
 
 
 class MethodIdItem(object):
@@ -2544,8 +2488,7 @@ class MethodHIdItem(object):
         self.offset = buff.get_idx()
 
         self.methods = []
-        for i in range(0, size):
-            self.methods.append(MethodIdItem(buff, cm))
+        self.methods.extend(MethodIdItem(buff, cm) for _ in range(0, size))
 
     def set_off(self, off):
         self.offset = off
@@ -2572,16 +2515,13 @@ class MethodHIdItem(object):
             nb = nb + 1
 
     def get_obj(self):
-        return [i for i in self.methods]
+        return list(self.methods)
 
     def get_raw(self):
         return b''.join(i.get_raw() for i in self.methods)
 
     def get_length(self):
-        length = 0
-        for i in self.methods:
-            length += i.get_length()
-        return length
+        return sum(i.get_length() for i in self.methods)
 
 
 class ProtoIdItemInvalid(object):
@@ -2676,7 +2616,7 @@ class EncodedField(object):
         name = self.CM.get_field(self.field_idx)
         self.class_name = name[0]
         self.name = name[2]
-        self.proto = ''.join(i for i in name[1])
+        self.proto = ''.join(name[1])
 
     def set_init_value(self, value):
         """
@@ -2912,7 +2852,7 @@ class EncodedMethod(object):
         if v and len(v) >= 3:
             self.class_name = v[0]
             self.name = v[1]
-            self.proto = ''.join(i for i in v[2])
+            self.proto = ''.join(v[2])
         else:
             self.class_name = 'CLASS_NAME_ERROR'
             self.name = 'NAME_ERROR'
@@ -2936,14 +2876,11 @@ class EncodedMethod(object):
             params = ret[0][1:].split()
 
             ret = proto.split(')')
-            params = ret[0][1:].split()
-            if params:
+            if params := ret[0][1:].split():
                 info["registers"] = (0, nb - len(params) - 1)
-                j = 0
                 info["params"] = []
-                for i in range(nb - len(params), nb):
+                for j, i in enumerate(range(nb - len(params), nb)):
                     info["params"].append((i, get_type(params[j])))
-                    j += 1
             else:
                 info["registers"] = (0, nb - 1)
 
@@ -2967,14 +2904,11 @@ class EncodedMethod(object):
         bytecode._PrintSubBanner("Params")
 
         ret = proto.split(')')
-        params = ret[0][1:].split()
-        if params:
+        if params := ret[0][1:].split():
             bytecode._PrintDefault("- local registers: v%d...v%d\n" %
                                    (0, nb - len(params) - 1))
-            j = 0
-            for i in range(nb - len(params), nb):
+            for j, i in enumerate(range(nb - len(params), nb)):
                 bytecode._PrintDefault("- v%d: %s\n" % (i, get_type(params[j])))
-                j += 1
         else:
             bytecode._PrintDefault("local registers: v%d...v%d\n" % (0, nb - 1))
 
@@ -3069,9 +3003,7 @@ class EncodedMethod(object):
 
         :rtype: int
         """
-        if self.code is not None:
-            return self.code.get_length()
-        return 0
+        return self.code.get_length() if self.code is not None else 0
 
     def get_code(self):
         """
@@ -3096,9 +3028,7 @@ class EncodedMethod(object):
 
         :rtype: a generator of each :class:`Instruction` (or a cached list of instructions if you have setup instructions)
         """
-        if self.code is None:
-            return []
-        return self.code.get_bc().get_instructions()
+        return [] if self.code is None else self.code.get_bc().get_instructions()
 
     def set_instructions(self, instructions):
         """
@@ -3132,9 +3062,7 @@ class EncodedMethod(object):
 
         :rtype: :class:`DebugInfoItem`
         """
-        if self.code is None:
-            return None
-        return self.code.get_debug()
+        return None if self.code is None else self.code.get_debug()
 
     def get_descriptor(self):
         """
@@ -3342,9 +3270,7 @@ class ClassDataItem(object):
 
         :rtype: a list of :class:`EncodedMethod` objects
         """
-        return [x
-                for x in self.direct_methods] + [x
-                                                 for x in self.virtual_methods]
+        return (list(self.direct_methods) + list(self.virtual_methods))
 
     def get_fields(self):
         """
@@ -3352,8 +3278,7 @@ class ClassDataItem(object):
 
         :rtype: a list of :class:`EncodedField` objects
         """
-        return [x for x in self.static_fields] + [x
-                                                  for x in self.instance_fields]
+        return (list(self.static_fields) + list(self.instance_fields))
 
     def set_off(self, off):
         self.offset = off
@@ -3367,15 +3292,15 @@ class ClassDataItem(object):
 
     def _load_elements(self, size, l, Type, buff, cm):
         prev = 0
-        for i in range(0, size):
+        for _ in range(0, size):
             el = Type(buff, cm)
             el.adjust_idx(prev)
 
-            if isinstance(el, EncodedField):
-                prev = el.get_field_idx()
-            else:
-                prev = el.get_method_idx()
-
+            prev = (
+                el.get_field_idx()
+                if isinstance(el, EncodedField)
+                else el.get_method_idx()
+            )
             l.append(el)
 
     def show(self):
@@ -3401,22 +3326,23 @@ class ClassDataItem(object):
             i.show()
 
     def get_obj(self):
-        return [i for i in self.static_fields] + \
-               [i for i in self.instance_fields] + \
-               [i for i in self.direct_methods] + \
-               [i for i in self.virtual_methods]
+        return (
+            (list(self.static_fields) + list(self.instance_fields))
+            + list(self.direct_methods)
+            + list(self.virtual_methods)
+        )
 
     def get_raw(self):
-        buff = writeuleb128(self.static_fields_size) + \
-               writeuleb128(self.instance_fields_size) + \
-               writeuleb128(self.direct_methods_size) + \
-               writeuleb128(self.virtual_methods_size) + \
-               b''.join(i.get_raw() for i in self.static_fields) + \
-               b''.join(i.get_raw() for i in self.instance_fields) + \
-               b''.join(i.get_raw() for i in self.direct_methods) + \
-               b''.join(i.get_raw() for i in self.virtual_methods)
-
-        return buff
+        return (
+            writeuleb128(self.static_fields_size)
+            + writeuleb128(self.instance_fields_size)
+            + writeuleb128(self.direct_methods_size)
+            + writeuleb128(self.virtual_methods_size)
+            + b''.join(i.get_raw() for i in self.static_fields)
+            + b''.join(i.get_raw() for i in self.instance_fields)
+            + b''.join(i.get_raw() for i in self.direct_methods)
+            + b''.join(i.get_raw() for i in self.virtual_methods)
+        )
 
     def get_length(self):
         length = len(writeuleb128(self.static_fields_size)) + \
@@ -3489,10 +3415,10 @@ class ClassDefItem(object):
                 self.class_data_item.set_static_fields(self.static_values.get_value())
 
     def __str__(self):
-        return "%s->%s" % (self.get_superclassname(), self.get_name())
+        return f"{self.get_superclassname()}->{self.get_name()}"
 
     def __repr__(self):
-        return "<dvm.ClassDefItem {}>".format(self.__str__())
+        return f"<dvm.ClassDefItem {self.__str__()}>"
 
     def get_methods(self):
         """
@@ -3713,7 +3639,7 @@ class ClassHDefItem(object):
 
         self.class_def = []
 
-        for i in range(0, size):
+        for _ in range(0, size):
             idx = buff.get_idx()
 
             class_def = ClassDefItem(buff, cm)
@@ -3728,20 +3654,14 @@ class ClassHDefItem(object):
         return self.offset
 
     def get_class_idx(self, idx):
-        for i in self.class_def:
-            if i.get_class_idx() == idx:
-                return i
-        return None
+        return next((i for i in self.class_def if i.get_class_idx() == idx), None)
 
     def get_method(self, name_class, name_method):
         l = []
 
         for i in self.class_def:
             if i.get_name() == name_class:
-                for j in i.get_methods():
-                    if j.get_name() == name_method:
-                        l.append(j)
-
+                l.extend(j for j in i.get_methods() if j.get_name() == name_method)
         return l
 
     def get_names(self):
@@ -3756,16 +3676,13 @@ class ClassHDefItem(object):
             i.show()
 
     def get_obj(self):
-        return [i for i in self.class_def]
+        return list(self.class_def)
 
     def get_raw(self):
         return b''.join(i.get_raw() for i in self.class_def)
 
     def get_length(self):
-        length = 0
-        for i in self.class_def:
-            length += i.get_length()
-        return length
+        return sum(i.get_length() for i in self.class_def)
 
 
 class EncodedTypeAddrPair(object):
@@ -3830,9 +3747,9 @@ class EncodedCatchHandler(object):
 
         self.handlers = []
 
-        for i in range(0, abs(self.size)):
-            self.handlers.append(EncodedTypeAddrPair(buff))
-
+        self.handlers.extend(
+            EncodedTypeAddrPair(buff) for _ in range(0, abs(self.size))
+        )
         if self.size <= 0:
             self.catch_all_addr = readuleb128(buff)
 
@@ -3891,11 +3808,9 @@ class EncodedCatchHandler(object):
         return buff
 
     def get_length(self):
-        length = len(writesleb128(self.size))
-
-        for i in self.handlers:
-            length += i.get_length()
-
+        length = len(writesleb128(self.size)) + sum(
+            i.get_length() for i in self.handlers
+        )
         if self.size <= 0:
             length += len(writeuleb128(self.catch_all_addr))
 
@@ -3918,8 +3833,7 @@ class EncodedCatchHandlerList(object):
         self.size = readuleb128(buff)
         self.list = []
 
-        for i in range(0, self.size):
-            self.list.append(EncodedCatchHandler(buff, cm))
+        self.list.extend(EncodedCatchHandler(buff, cm) for _ in range(0, self.size))
 
     def get_size(self):
         """
@@ -3964,11 +3878,7 @@ class EncodedCatchHandlerList(object):
         return buff
 
     def get_length(self):
-        length = len(self.get_obj())
-
-        for i in self.list:
-            length += i.get_length()
-        return length
+        return len(self.get_obj()) + sum(i.get_length() for i in self.list)
 
 
 KIND_METH = 0
@@ -4007,7 +3917,7 @@ def get_kind(cm, kind, value):
         name = method.get_name()
         descriptor = method.get_descriptor()
 
-        return "%s->%s%s" % (class_name, name, descriptor)
+        return f"{class_name}->{name}{descriptor}"
 
     elif kind == KIND_STRING:
         return repr(cm.get_string(value))
@@ -4017,7 +3927,7 @@ def get_kind(cm, kind, value):
 
     elif kind == KIND_FIELD:
         class_name, proto, field_name = cm.get_field(value)
-        return "%s->%s %s" % (class_name, field_name, proto)
+        return f"{class_name}->{field_name} {proto}"
 
     elif kind == KIND_TYPE:
         return cm.get_type(value)
@@ -4034,7 +3944,7 @@ def get_kind(cm, kind, value):
         # FIXME: depends of the android version ...
         if len(INLINE_METHODS) > value:
             elem = INLINE_METHODS[value]
-            buff += " %s->%s%s" % (elem[0], elem[1], elem[2])
+            buff += f" {elem[0]}->{elem[1]}{elem[2]}"
 
         return buff
 
@@ -4090,7 +4000,7 @@ class Instruction(object):
         """
         Print the instruction
         """
-        print(self.get_name() + " " + self.get_output(idx), end=' ')
+        print(f"{self.get_name()} {self.get_output(idx)}", end=' ')
 
     def show_buff(self, idx):
         """
@@ -4167,7 +4077,7 @@ class InstructionInvalid(Instruction):
     def __init__(self, cm, buff):
         super(InstructionInvalid, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
 
         # log.debug("OP:%x" % (self.OP))
@@ -4204,7 +4114,7 @@ class FillArrayData(object):
         self.notes = []
 
         self.format_general_size = calcsize("=HHI")
-        self.ident = unpack("=H", buff[0:2])[0]
+        self.ident = unpack("=H", buff[:2])[0]
         self.element_width = unpack("=H", buff[2:4])[0]
         self.size = unpack("=I", buff[4:8])[0]
 
@@ -4258,7 +4168,7 @@ class FillArrayData(object):
 
         data = self.get_data()
 
-        buff += repr(data) + " | "
+        buff += f"{repr(data)} | "
         for i in range(0, len(data)):
             buff += "\\x{:02x}".format(data[i])
 
@@ -4289,7 +4199,7 @@ class FillArrayData(object):
 
         :rtype: string
         """
-        buff = self.get_name() + " "
+        buff = f"{self.get_name()} "
 
         for i in range(0, len(self.data)):
             buff += "\\x%02x" % self.data[i]
@@ -4333,18 +4243,18 @@ class SparseSwitch(object):
         self.notes = []
 
         self.format_general_size = calcsize("=HH")
-        self.ident = unpack("=H", buff[0:2])[0]
+        self.ident = unpack("=H", buff[:2])[0]
         self.size = unpack("=H", buff[2:4])[0]
 
         self.keys = []
         self.targets = []
 
         idx = self.format_general_size
-        for i in range(0, self.size):
+        for _ in range(0, self.size):
             self.keys.append(unpack('=l', buff[idx:idx + 4])[0])
             idx += 4
 
-        for i in range(0, self.size):
+        for _ in range(0, self.size):
             self.targets.append(unpack('=l', buff[idx:idx + 4])[0])
             idx += 4
 
@@ -4425,7 +4335,7 @@ class SparseSwitch(object):
 
         :rtype: string
         """
-        buff = self.get_name() + " "
+        buff = f"{self.get_name()} "
         for i in range(0, len(self.keys)):
             buff += "%x:%x " % (self.keys[i], self.targets[i])
 
@@ -4465,7 +4375,7 @@ class PackedSwitch(object):
 
         self.format_general_size = calcsize("=HHI")
 
-        self.ident = unpack("=H", buff[0:2])[0]
+        self.ident = unpack("=H", buff[:2])[0]
         self.size = unpack("=H", buff[2:4])[0]
         self.first_key = unpack("=i", buff[4:8])[0]
 
@@ -4477,7 +4387,7 @@ class PackedSwitch(object):
         if (max_size * 4) > len(buff):
             max_size = len(buff) - idx - 8
 
-        for i in range(0, max_size):
+        for _ in range(0, max_size):
             self.targets.append(unpack('=l', buff[idx:idx + 4])[0])
             idx += 4
 
@@ -4560,7 +4470,7 @@ class PackedSwitch(object):
 
         :rtype: string
         """
-        buff = self.get_name() + " "
+        buff = f"{self.get_name()} "
         buff += "%x:" % self.first_key
 
         for i in self.targets:
@@ -4598,7 +4508,7 @@ class Instruction35c(Instruction):
         super(Instruction35c, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.G = (i16 >> 8) & 0xf
         self.A = (i16 >> 12) & 0xf
@@ -4615,7 +4525,7 @@ class Instruction35c(Instruction):
         kind = get_kind(self.cm, self.get_kind(), self.BBBB)
 
         if self.A == 0:
-            buff += "%s" % kind
+            buff += f"{kind}"
         elif self.A == 1:
             buff += "v%d, %s" % (self.C, kind)
         elif self.A == 2:
@@ -4678,7 +4588,7 @@ class Instruction10x(Instruction):
     def __init__(self, cm, buff):
         super(Instruction10x, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
 
     def get_output(self, idx=-1):
@@ -4702,7 +4612,7 @@ class Instruction21h(Instruction):
     def __init__(self, cm, buff):
         super(Instruction21h, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -4725,7 +4635,7 @@ class Instruction21h(Instruction):
         buff += "v%d, %d" % (self.AA, self.BBBB)
 
         if self.formatted_operands:
-            buff += " # %s" % (str(self.formatted_operands))
+            buff += f" # {str(self.formatted_operands)}"
 
         return buff
 
@@ -4750,7 +4660,7 @@ class Instruction11n(Instruction):
     def __init__(self, cm, buff):
         super(Instruction11n, self).__init__()
 
-        i16 = unpack("=h", buff[0:2])[0]
+        i16 = unpack("=h", buff[:2])[0]
         self.OP = i16 & 0xff
         self.A = (i16 >> 8) & 0xf
         self.B = (i16 >> 12)
@@ -4782,7 +4692,7 @@ class Instruction21c(Instruction):
         super(Instruction21c, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -4824,7 +4734,7 @@ class Instruction21s(Instruction):
     def __init__(self, cm, buff):
         super(Instruction21s, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -4843,7 +4753,7 @@ class Instruction21s(Instruction):
         buff += "v%d, %d" % (self.AA, self.BBBB)
 
         if self.formatted_operands:
-            buff += " # %s" % str(self.formatted_operands)
+            buff += f" # {str(self.formatted_operands)}"
 
         return buff
 
@@ -4869,7 +4779,7 @@ class Instruction22c(Instruction):
         super(Instruction22c, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.A = (i16 >> 8) & 0xf
         self.B = (i16 >> 12) & 0xf
@@ -4906,7 +4816,7 @@ class Instruction22cs(Instruction):
         super(Instruction22cs, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.A = (i16 >> 8) & 0xf
         self.B = (i16 >> 12) & 0xf
@@ -4941,7 +4851,7 @@ class Instruction31t(Instruction):
 
     def __init__(self, cm, buff):
         super(Instruction31t, self).__init__()
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -4976,7 +4886,7 @@ class Instruction31c(Instruction):
         super(Instruction31c, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5023,7 +4933,7 @@ class Instruction12x(Instruction):
     def __init__(self, cm, buff):
         super(Instruction12x, self).__init__()
 
-        i16 = unpack("=h", buff[0:2])[0]
+        i16 = unpack("=h", buff[:2])[0]
         self.OP = i16 & 0xff
         self.A = (i16 >> 8) & 0xf
         self.B = (i16 >> 12) & 0xf
@@ -5051,7 +4961,7 @@ class Instruction11x(Instruction):
     def __init__(self, cm, buff):
         super(Instruction11x, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5078,7 +4988,7 @@ class Instruction51l(Instruction):
     def __init__(self, cm, buff):
         super(Instruction51l, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5099,7 +5009,7 @@ class Instruction51l(Instruction):
         buff += "v%d, %d" % (self.AA, self.BBBBBBBBBBBBBBBB)
 
         if self.formatted_operands:
-            buff += " # %s" % str(self.formatted_operands)
+            buff += f" # {str(self.formatted_operands)}"
 
         return buff
 
@@ -5125,7 +5035,7 @@ class Instruction31i(Instruction):
     def __init__(self, cm, buff):
         super(Instruction31i, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5149,7 +5059,7 @@ class Instruction31i(Instruction):
         buff += "v%d, %d" % (self.AA, self.BBBBBBBB)
 
         if self.formatted_operands:
-            buff += " # %s" % str(self.formatted_operands)
+            buff += f" # {str(self.formatted_operands)}"
 
         return buff
 
@@ -5174,7 +5084,7 @@ class Instruction22x(Instruction):
     def __init__(self, cm, buff):
         super(Instruction22x, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5203,7 +5113,7 @@ class Instruction23x(Instruction):
     def __init__(self, cm, buff):
         super(Instruction23x, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5235,7 +5145,7 @@ class Instruction20t(Instruction):
     def __init__(self, cm, buff):
         super(Instruction20t, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AAAA = unpack("=h", buff[2:4])[0]
 
@@ -5265,7 +5175,7 @@ class Instruction21t(Instruction):
     def __init__(self, cm, buff):
         super(Instruction21t, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5297,7 +5207,7 @@ class Instruction10t(Instruction):
     def __init__(self, cm, buff):
         super(Instruction10t, self).__init__()
 
-        self.OP = unpack("=B", buff[0:1])[0]
+        self.OP = unpack("=B", buff[:1])[0]
         self.AA = unpack("=b", buff[1:2])[0]
 
     def get_length(self):
@@ -5326,7 +5236,7 @@ class Instruction22t(Instruction):
     def __init__(self, cm, buff):
         super(Instruction22t, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.A = (i16 >> 8) & 0xf
         self.B = (i16 >> 12) & 0xf
@@ -5359,7 +5269,7 @@ class Instruction22s(Instruction):
     def __init__(self, cm, buff):
         super(Instruction22s, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.A = (i16 >> 8) & 0xf
         self.B = (i16 >> 12) & 0xf
@@ -5392,7 +5302,7 @@ class Instruction22b(Instruction):
     def __init__(self, cm, buff):
         super(Instruction22b, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5426,7 +5336,7 @@ class Instruction30t(Instruction):
     def __init__(self, cm, buff):
         super(Instruction30t, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
 
         self.AAAAAAAA = unpack("=i", buff[2:6])[0]
@@ -5459,7 +5369,7 @@ class Instruction3rc(Instruction):
         super(Instruction3rc, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5488,13 +5398,9 @@ class Instruction3rc(Instruction):
         if self.CCCC == self.NNNN:
             return [(OPERAND_REGISTER, self.CCCC),
                     (self.get_kind() + OPERAND_KIND, self.BBBB, kind)]
-        else:
-            l = []
-            for i in range(self.CCCC, self.NNNN + 1):
-                l.append((OPERAND_REGISTER, i))
-
-            l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
-            return l
+        l = [(OPERAND_REGISTER, i) for i in range(self.CCCC, self.NNNN + 1)]
+        l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
+        return l
 
     def get_ref_kind(self):
         return self.BBBB
@@ -5511,7 +5417,7 @@ class Instruction32x(Instruction):
     def __init__(self, cm, buff):
         super(Instruction32x, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AAAA = unpack("=H", buff[2:4])[0]
         self.BBBB = unpack("=H", buff[4:6])[0]
@@ -5539,7 +5445,7 @@ class Instruction20bc(Instruction):
     def __init__(self, cm, buff):
         super(Instruction20bc, self).__init__()
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5569,7 +5475,7 @@ class Instruction35mi(Instruction):
         super(Instruction35mi, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.G = (i16 >> 8) & 0xf
         self.A = (i16 >> 12) & 0xf
@@ -5647,7 +5553,7 @@ class Instruction35ms(Instruction):
         super(Instruction35ms, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.G = (i16 >> 8) & 0xf
         self.A = (i16 >> 12) & 0xf
@@ -5725,7 +5631,7 @@ class Instruction3rmi(Instruction):
         super(Instruction3rmi, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5754,13 +5660,9 @@ class Instruction3rmi(Instruction):
         if self.CCCC == self.NNNN:
             return [(OPERAND_REGISTER, self.CCCC),
                     (self.get_kind() + OPERAND_KIND, self.BBBB, kind)]
-        else:
-            l = []
-            for i in range(self.CCCC, self.NNNN):
-                l.append((OPERAND_REGISTER, i))
-
-            l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
-            return l
+        l = [(OPERAND_REGISTER, i) for i in range(self.CCCC, self.NNNN)]
+        l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
+        return l
 
     def get_ref_kind(self):
         return self.BBBB
@@ -5778,7 +5680,7 @@ class Instruction3rms(Instruction):
         super(Instruction3rms, self).__init__()
         self.cm = cm
 
-        i16 = unpack("=H", buff[0:2])[0]
+        i16 = unpack("=H", buff[:2])[0]
         self.OP = i16 & 0xff
         self.AA = (i16 >> 8) & 0xff
 
@@ -5807,13 +5709,9 @@ class Instruction3rms(Instruction):
         if self.CCCC == self.NNNN:
             return [(OPERAND_REGISTER, self.CCCC),
                     (self.get_kind() + OPERAND_KIND, self.BBBB, kind)]
-        else:
-            l = []
-            for i in range(self.CCCC, self.NNNN):
-                l.append((OPERAND_REGISTER, i))
-
-            l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
-            return l
+        l = [(OPERAND_REGISTER, i) for i in range(self.CCCC, self.NNNN)]
+        l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
+        return l
 
     def get_ref_kind(self):
         return self.BBBB
@@ -5831,7 +5729,7 @@ class Instruction41c(Instruction):
         super(Instruction41c, self).__init__()
         self.cm = cm
 
-        self.OP = unpack("=H", buff[0:2])[0]
+        self.OP = unpack("=H", buff[:2])[0]
         self.BBBBBBBB = unpack("=I", buff[2:6])[0]
 
         self.AAAA = unpack("=H", buff[6:8])[0]
@@ -5867,7 +5765,7 @@ class Instruction40sc(Instruction):
         super(Instruction40sc, self).__init__()
         self.cm = cm
 
-        self.OP = unpack("=H", buff[0:2])[0]
+        self.OP = unpack("=H", buff[:2])[0]
         self.BBBBBBBB = unpack("=I", buff[2:6])[0]
         self.AAAA = unpack("=H", buff[6:8])[0]
 
@@ -5902,7 +5800,7 @@ class Instruction52c(Instruction):
         super(Instruction52c, self).__init__()
         self.cm = cm
 
-        self.OP = unpack("=H", buff[0:2])[0]
+        self.OP = unpack("=H", buff[:2])[0]
         self.CCCCCCCC = unpack("=I", buff[2:6])[0]
         self.AAAA = unpack("=H", buff[6:8])[0]
         self.BBBB = unpack("=H", buff[8:10])[0]
@@ -5938,7 +5836,7 @@ class Instruction5rc(Instruction):
         super(Instruction5rc, self).__init__()
         self.cm = cm
 
-        self.OP = unpack("=H", buff[0:2])[0]
+        self.OP = unpack("=H", buff[:2])[0]
         self.BBBBBBBB = unpack("=I", buff[2:6])[0]
         self.AAAA = unpack("=H", buff[6:8])[0]
         self.CCCC = unpack("=H", buff[8:10])[0]
@@ -5965,13 +5863,9 @@ class Instruction5rc(Instruction):
         if self.CCCC == self.NNNN:
             return [(OPERAND_REGISTER, self.CCCC),
                     (self.get_kind() + OPERAND_KIND, self.BBBB, kind)]
-        else:
-            l = []
-            for i in range(self.CCCC, self.NNNN):
-                l.append((OPERAND_REGISTER, i))
-
-            l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
-            return l
+        l = [(OPERAND_REGISTER, i) for i in range(self.CCCC, self.NNNN)]
+        l.append((self.get_kind() + OPERAND_KIND, self.BBBB, kind))
+        return l
 
     def get_ref_kind(self):
         return self.BBBBBBBB
