@@ -198,10 +198,7 @@ class Condition(object):
                                                      self.cond1, self.cond2)
 
     def __str__(self):
-        if self.isnot:
-            ret = '!%s %s %s'
-        else:
-            ret = '%s %s %s'
+        ret = '!%s %s %s' if self.isnot else '%s %s %s'
         return ret % (self.cond1, ['||', '&&'][self.isand], self.cond2)
 
 
@@ -264,7 +261,7 @@ class LoopBlock(CondBlock):
 
 class TryBlock(BasicBlock):
     def __init__(self, node):
-        super(TryBlock, self).__init__('Try-%s' % node.name, None)
+        super(TryBlock, self).__init__(f'Try-{node.name}', None)
         self.try_start = node
         self.catch = []
 
@@ -284,7 +281,7 @@ class TryBlock(BasicBlock):
         visitor.visit_try_node(self)
 
     def __str__(self):
-        return 'Try(%s)[%s]' % (self.name, self.catch)
+        return f'Try({self.name})[{self.catch}]'
 
 
 class CatchBlock(BasicBlock):
@@ -294,7 +291,7 @@ class CatchBlock(BasicBlock):
         if isinstance(first_ins, MoveExceptionExpression):
             self.exception_ins = first_ins
             node.ins.pop(0)
-        super(CatchBlock, self).__init__('Catch-%s' % node.name, node.ins)
+        super(CatchBlock, self).__init__(f'Catch-{node.name}', node.ins)
         self.catch_start = node
         self.catch_type = node.catch_type
 
@@ -308,7 +305,7 @@ class CatchBlock(BasicBlock):
             visitor.write(get_type(self.catch_type))
 
     def __str__(self):
-        return 'Catch(%s)' % self.name
+        return f'Catch({self.name})'
 
 
 def build_node_from_block(block, vmap, gen_ret, exception_type=None):

@@ -165,7 +165,7 @@ def parse_descriptor(desc):
         dim += 1
 
     if desc in TYPE_DESCRIPTOR:
-        return typen('.' + TYPE_DESCRIPTOR[desc], dim)
+        return typen(f'.{TYPE_DESCRIPTOR[desc]}', dim)
     if desc and desc[0] == 'L' and desc[-1] == ';':
         return typen(desc[1:-1], dim)
     # invalid descriptor (probably None)
@@ -195,11 +195,11 @@ def literal_hex_int(b):
 
 
 def literal_long(b):
-    return literal(str(b) + 'L', ('.long', 0))
+    return literal(f'{str(b)}L', ('.long', 0))
 
 
 def literal_float(f):
-    return literal(str(f) + 'f', ('.float', 0))
+    return literal(f'{str(f)}f', ('.float', 0))
 
 
 def literal_double(f):
@@ -212,7 +212,7 @@ def literal_null():
 
 def visit_decl(var, init_expr=None):
     t = parse_descriptor(var.get_type())
-    v = local('v{}'.format(var.name))
+    v = local(f'v{var.name}')
     return local_decl_stmt(init_expr, var_decl(t, v))
 
 
@@ -221,11 +221,12 @@ def visit_arr_data(value):
     tab = []
     elem_size = value.element_width
     if elem_size == 4:
-        for i in range(0, value.size * 4, 4):
-            tab.append(struct.unpack('<i', data[i:i + 4])[0])
+        tab.extend(
+            struct.unpack('<i', data[i : i + 4])[0]
+            for i in range(0, value.size * 4, 4)
+        )
     else:  # FIXME: other cases
-        for i in range(value.size):
-            tab.append(data[i])
+        tab.extend(data[i] for i in range(value.size))
     return array_initializer(list(map(literal_int, tab)))
 
 
@@ -259,10 +260,7 @@ def visit_expr(op):
     if isinstance(op, instruction.AssignExpression):
         lhs = op.var_map.get(op.lhs)
         rhs = op.rhs
-        if lhs is None:
-            return visit_expr(rhs)
-        return write_inplace_if_possible(lhs, rhs)
-
+        return visit_expr(rhs) if lhs is None else write_inplace_if_possible(lhs, rhs)
     if isinstance(op, instruction.BaseClass):
         if op.clsdesc is None:
             assert (op.cls == "super")
@@ -315,7 +313,7 @@ def visit_expr(op):
             return literal_double(op.cst)
         elif op.type == 'Ljava/lang/Class;':
             return literal_class(op.clsdesc)
-        return dummy('??? Unexpected constant: ' + str(op.type))
+        return dummy(f'??? Unexpected constant: {str(op.type)}')
 
     if isinstance(op, instruction.FillArrayExpression):
         array_expr = visit_expr(op.var_map[op.reg])
@@ -373,7 +371,7 @@ def visit_expr(op):
     if isinstance(op, instruction.Param):
         if isinstance(op, instruction.ThisParam):
             return local('this')
-        return local('p{}'.format(op.v))
+        return local(f'p{op.v}')
     if isinstance(op, instruction.StaticExpression):
         triple = op.clsdesc[1:-1], op.name, op.ftype
         return field_access(triple, parse_descriptor(op.clsdesc))
@@ -393,8 +391,8 @@ def visit_expr(op):
         return parenthesis(expr)
     if isinstance(op, instruction.Variable):
         # assert(op.declared)
-        return local('v{}'.format(op.name))
-    return dummy('??? Unexpected op: ' + type(op).__name__)
+        return local(f'v{op.name}')
+    return dummy(f'??? Unexpected op: {type(op).__name__}')
 
 
 def visit_ins(op, isCtor=False):
@@ -491,7 +489,7 @@ class JSONWriter(object):
         paramdecls = []
         for ptype, name in zip(m.params_type, params):
             t = parse_descriptor(ptype)
-            v = local('p{}'.format(name))
+            v = local(f'p{name}')
             paramdecls.append(var_decl(t, v))
 
         if self.graph is None:
@@ -515,8 +513,7 @@ class JSONWriter(object):
         left = parenthesis(self.get_cond(cond.cond1))
         right = parenthesis(self.get_cond(cond.cond2))
         op = '&&' if cond.isand else '||'
-        res = binary_infix(op, left, right)
-        return res
+        return binary_infix(op, left, right)
 
     def get_cond(self, node):
         if isinstance(node, basic_blocks.ShortCircuitBlock):
@@ -609,7 +606,7 @@ class JSONWriter(object):
             self.add(if_stmt(cond_expr, scopes))
         elif follow is not None:
             if cond.true in (follow, self.next_case) or \
-                            cond.num > cond.true.num:
+                                cond.num > cond.true.num:
                 # or cond.true.num > cond.false.num:
                 cond.neg()
                 cond.true, cond.false = cond.false, cond.true
@@ -620,7 +617,7 @@ class JSONWriter(object):
                     self.visit_node(cond.true)
                 scopes.append(scope)
 
-            is_else = not (follow in (cond.true, cond.false))
+            is_else = follow not in (cond.true, cond.false)
             if is_else and cond.false not in self.visited_nodes:
                 with self as scope:
                     self.visit_node(cond.false)
@@ -658,11 +655,7 @@ class JSONWriter(object):
                 continue
 
             cur_ks = switch.node_to_case[node][:]
-            if i + 1 < len(cases):
-                self.next_case = cases[i + 1]
-            else:
-                self.next_case = None
-
+            self.next_case = cases[i + 1] if i + 1 < len(cases) else None
             if node is default:
                 cur_ks.append(None)
                 default = None
@@ -710,7 +703,7 @@ class JSONWriter(object):
                 var.declared = True
 
                 ctype = var.get_type()
-                name = 'v{}'.format(var.name)
+                name = f'v{var.name}'
             else:
                 ctype = catch_node.catch_type
                 name = '_'

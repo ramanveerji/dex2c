@@ -29,8 +29,8 @@ class Graph(object):
     def __init__(self):
         self.entry = None
         self.exit = None
-        self.nodes = list()
-        self.landing_pads = list()
+        self.nodes = []
+        self.landing_pads = []
         self.rpo = []
         self.edges = defaultdict(list)
         self.catch_edges = defaultdict(list)
@@ -161,8 +161,7 @@ class Graph(object):
             visited.add(n)
             for suc in self.all_sucs(n):
                 if suc not in visited:
-                    for cnt, s in _visit(suc, cnt):
-                        yield cnt, s
+                    yield from _visit(suc, cnt)
             n.po = cnt
             yield cnt + 1, n
 
@@ -190,7 +189,7 @@ class Graph(object):
                                     color='black',
                                     style='dashed'))
 
-        g.write_png('%s/%s.png' % (dname, name))
+        g.write_png(f'{dname}/{name}.png')
 
     def immediate_dominators(self):
         return dom_lt(self)
@@ -202,8 +201,7 @@ class Graph(object):
         return str(self.nodes)
 
     def __iter__(self):
-        for node in self.nodes:
-            yield node
+        yield from self.nodes
 
 
 def dom_lt(graph):
@@ -271,7 +269,7 @@ def dom_lt(graph):
 
 def bfs(start):
     to_visit = [start]
-    visited = set([start])
+    visited = {start}
     while to_visit:
         node = to_visit.pop(0)
         yield node
@@ -343,11 +341,7 @@ def construct(start_block):
 
     graph.compute_rpo()
 
-    offset_to_node = {}
-    for node in graph.rpo:
-        if node.start >= 0:
-            offset_to_node[node.start] = node
-
+    offset_to_node = {node.start: node for node in graph.rpo if node.start >= 0}
     graph.node_to_landing_pad = node_to_landing_pad
     graph.offset_to_node = offset_to_node
     for node in graph.rpo:

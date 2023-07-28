@@ -60,8 +60,7 @@ def create_tmp_directory():
 # n
 def get_random_str(length=8):
     characters = ascii_letters + digits
-    result = "".join(choice(characters) for i in range(length))
-    return result
+    return "".join(choice(characters) for _ in range(length))
 
 
 # n
@@ -138,11 +137,10 @@ class ApkTool(object):
 # n
 def change_min_sdk(command=list(), min_sdk="21", update_existing=True):
     if "--min-sdk-version" in command:
-        if update_existing:
-            min_sdk_value_index = command.index("--min-sdk-version") + 1
-            command[min_sdk_value_index] = min_sdk
-        else:
+        if not update_existing:
             return
+        min_sdk_value_index = command.index("--min-sdk-version") + 1
+        command[min_sdk_value_index] = min_sdk
     else:
         command.append("--min-sdk-version")
         command.append(min_sdk)
@@ -151,11 +149,10 @@ def change_min_sdk(command=list(), min_sdk="21", update_existing=True):
 # n
 def change_max_sdk(command=list(), max_sdk="33", update_existing=True):
     if "--max-sdk-version" in command:
-        if update_existing:
-            max_sdk_value_index = command.index("--max-sdk-version") + 1
-            command[max_sdk_value_index] = max_sdk
-        else:
+        if not update_existing:
             return
+        max_sdk_value_index = command.index("--max-sdk-version") + 1
+        command[max_sdk_value_index] = max_sdk
     else:
         command.append("--max-sdk-version")
         command.append(max_sdk)
@@ -204,23 +201,20 @@ def sign(unsigned_apk, signed_apk):
         "pass:" + signature["keystore_pass"],
         "--key-pass",
         "pass:" + signature["store_pass"],
+        "--v1-signing-enabled",
+        "true" if signature["v1_enabled"] is True else "false",
+        "--v2-signing-enabled",
+        "true" if signature["v2_enabled"] is True else "false",
+        "--v3-signing-enabled",
+        "true" if signature["v3_enabled"] is True else "false",
+        "--v4-signing-enabled",
+        "false",
     ]
-
-    command.append("--v1-signing-enabled")
-    command.append("true" if signature["v1_enabled"] is True else "false")
-    command.append("--v2-signing-enabled")
-    command.append("true" if signature["v2_enabled"] is True else "false")
-    command.append("--v3-signing-enabled")
-    command.append("true" if signature["v3_enabled"] is True else "false")
-    command.append("--v4-signing-enabled")
-    command.append("false")
 
     if signature["v1_enabled"] is True:
         change_min_sdk(command, "21")
         change_max_sdk(command, "23")
-        command.append("--v1-signer-name")
-        command.append("ANDROID")
-
+        command.extend(("--v1-signer-name", "ANDROID"))
     if signature["v2_enabled"] is True:
         change_min_sdk(command, "24", False)
         change_max_sdk(command, "26")
@@ -232,13 +226,13 @@ def sign(unsigned_apk, signed_apk):
     try:
         check_call(command, stderr=STDOUT)
     except Exception as ex:
-        Logger.error("Signing %s failed!" % unsigned_apk, exc_info=True)
+        Logger.error(f"Signing {unsigned_apk} failed!", exc_info=True)
         print(f"{str(ex)}")
         move_unsigned(unsigned_apk, signed_apk)
 
 
 def move_unsigned(unsigned_apk, signed_apk):
-    Logger.info("Moving unsigned apk -> " + signed_apk)
+    Logger.info(f"Moving unsigned apk -> {signed_apk}")
     copy(unsigned_apk, signed_apk)
 
 
@@ -250,20 +244,11 @@ def auto_vm(filename):
     ret = androconf.is_android(filename)
 
     if ret == "APK":
-        dex_files = list()
-
-        for dex in apk.APK(filename).get_all_dex():
-            dex_files.append(dvm.DalvikVMFormat(dex))
-
-        return dex_files
-
-    elif ret == "DEX":
+        return [dvm.DalvikVMFormat(dex) for dex in apk.APK(filename).get_all_dex()]
+    elif ret in ["DEX", "DEY"]:
         return list(dvm.DalvikVMFormat(read(filename)))
 
-    elif ret == "DEY":
-        return list(dvm.DalvikVMFormat(read(filename)))
-
-    raise Exception("Unsupported file %s" % filename)
+    raise Exception(f"Unsupported file {filename}")
 
 
 class MethodFilter(object):
@@ -395,11 +380,7 @@ class MethodFilter(object):
         if method in self.annotated_methods:
             return True
 
-        for rule in self._compile_filters:
-            if rule.search(full_name):
-                return True
-
-        return False
+        return any(rule.search(full_name) for rule in self._compile_filters)
 
 
 def copy_compiled_libs(project_dir, decompiled_dir):
@@ -422,7 +403,7 @@ def copy_compiled_libs(project_dir, decompiled_dir):
             if IGNORE_APP_LIB_ABIS:
                 continue
             else:
-                raise Exception("ABI %s is not supported!" % abi)
+                raise Exception(f"ABI {abi} is not supported!")
         # n
         android_mk_filename = "project/jni/Android.mk"
         local_module_value = None
@@ -433,7 +414,7 @@ def copy_compiled_libs(project_dir, decompiled_dir):
                     local_module_value = local_module_value.strip()
                     break
 
-        libnc = path.join(src, "lib" + local_module_value + ".so")
+        libnc = path.join(src, f"lib{local_module_value}.so")
         copy(libnc, dst)
 
 
@@ -485,7 +466,7 @@ def native_class_methods(smali_path, compiled_methods):
                 if (class_name, name, proto) in compiled_methods:
                     if line.find(" native ") < 0:
                         code_lines[-1] = code_lines[-1].replace(
-                            current_method, "native " + current_method
+                            current_method, f"native {current_method}"
                         )
                     handle_method_body()
                     code_lines.append(".end method\n")
@@ -504,7 +485,7 @@ def native_compiled_dexes(decompiled_dir, compiled_methods):
         for method_triple in compiled_methods.keys():
             cls_name, name, proto = method_triple
             cls_name = cls_name[1:-1]  # strip L;
-            smali_path = path.join(decompiled_dir, classes, cls_name) + ".smali"
+            smali_path = f"{path.join(decompiled_dir, classes, cls_name)}.smali"
             if path.exists(smali_path):
                 todo.append(smali_path)
 
@@ -519,9 +500,9 @@ def write_compiled_methods(project_dir, compiled_methods):
 
     for method_triple, code in compiled_methods.items():
         full_name = JniLongName(*method_triple)
-        filepath = path.join(source_dir, full_name) + ".cpp"
+        filepath = f"{path.join(source_dir, full_name)}.cpp"
         if path.exists(filepath):
-            Logger.warning("Overwrite file %s %s" % (filepath, method_triple))
+            Logger.warning(f"Overwrite file {filepath} {method_triple}")
 
         try:
             with open(filepath, "w") as fp:
@@ -564,25 +545,22 @@ def compile_dex(apkfile, filtercfg, obfus):
             full_name = "".join(method_triple)
 
             if len(jni_longname) > 220:
-                Logger.debug("Name to long %s(> 220) %s" % (jni_longname, full_name))
+                Logger.debug(f"Name to long {jni_longname}(> 220) {full_name}")
                 continue
 
             if method_filter.should_compile(m):
-                Logger.debug("compiling %s" % (full_name))
+                Logger.debug(f"compiling {full_name}")
                 try:
                     code = compiler.get_source_method(m)
                 except Exception as e:
-                    Logger.warning(
-                        "compile method failed:%s (%s)" % (full_name, str(e)),
-                        exc_info=True,
-                    )
-                    errors.append("%s:%s" % (full_name, str(e)))
+                    Logger.warning(f"compile method failed:{full_name} ({str(e)})", exc_info=True)
+                    errors.append(f"{full_name}:{str(e)}")
                     X_errors.extend(errors)
                     continue
 
                 if code:
                     compiled_method_code[method_triple] = code
-                    X_compiled_method_code.update(compiled_method_code)
+                    X_compiled_method_code |= compiled_method_code
 
     return X_compiled_method_code, X_errors
 
@@ -601,10 +579,9 @@ def get_application_name_from_manifest(apk_file):
     a = apk.APK(apk_file)
     manifest_data = a.get_android_manifest_xml()
     application_element = manifest_data.find("application")
-    application_name = application_element.get(
+    return application_element.get(
         "{http://schemas.android.com/apk/res/android}name", ""
     )
-    return application_name
 
 
 # n
@@ -620,7 +597,7 @@ def get_smali_folders(decompiled_dir):
 
 # n
 def get_application_class_file(decompiled_dir, smali_folders, application_name):
-    if not application_name == "":
+    if application_name != "":
         fileName = application_name.replace(".", os.sep) + ".smali"
 
         for smali_folder in smali_folders:
@@ -659,52 +636,51 @@ def restore_jni_project_folder(src_path):
 def adjust_application_mk(apkfile):
     Logger.info("Adjusting Application.mk file using available abis from apk")
 
+    if not is_apk(apkfile):
+        raise Exception(f"{apkfile} is not an apk file")
+    zip_file = zipfile.ZipFile(io.BytesIO(bytearray(read(apkfile))), mode="r")
+
     supported_abis = {"armeabi-v7a", "arm64-v8a", "x86_64", "x86"}
     depreacated_abis = {"armeabi"}
     available_abis = set()
 
-    if is_apk(apkfile):
-        zip_file = zipfile.ZipFile(io.BytesIO(bytearray(read(apkfile))), mode="r")
+    for file_name in zip_file.namelist():
+        if file_name.startswith("lib/"):
+            abi_name = file_name.split("/")[1].strip()
 
-        for file_name in zip_file.namelist():
-            if file_name.startswith("lib/"):
-                abi_name = file_name.split("/")[1].strip()
+            if len(file_name.split("/")) <= 2:
+                continue
 
-                if len(file_name.split("/")) <= 2:
-                    continue
+            if abi_name in supported_abis:
+                available_abis.add(abi_name)
+            elif abi_name in depreacated_abis:
+                Logger.warning(
+                    "ABI 'armeabi' is depreacated, using 'armeabi-v7a' instead"
+                )
+                available_abis.add("armeabi-v7a")
+            else:
+                raise Exception(
+                    f"ABI '{abi_name}' is unsupported, please remove it from apk or use flag --force-keep-libs and try again"
+                )
 
-                if abi_name in supported_abis:
-                    available_abis.add(abi_name)
-                elif abi_name in depreacated_abis:
-                    Logger.warning(
-                        "ABI 'armeabi' is depreacated, using 'armeabi-v7a' instead"
-                    )
-                    available_abis.add("armeabi-v7a")
-                else:
-                    raise Exception(
-                        f"ABI '{abi_name}' is unsupported, please remove it from apk or use flag --force-keep-libs and try again"
-                    )
+    if not available_abis:
+        Logger.info(
+            "No lib abis found in apk, using the ones defined in Application.mk file"
+        )
+        return
 
-        if len(available_abis) == 0:
-            Logger.info(
-                "No lib abis found in apk, using the ones defined in Application.mk file"
-            )
-            return
+    application_mk_path = "project/jni/Application.mk"
+    temp_application_mk_path = make_temp_file("-application.mk")
 
-        application_mk_path = "project/jni/Application.mk"
-        temp_application_mk_path = make_temp_file("-application.mk")
+    with open(application_mk_path, "r") as application_mk_file:
+        with open(temp_application_mk_path, "w") as temp_application_mk_file:
+            for line in application_mk_file:
+                if line.startswith("APP_ABI"):
+                    line = "APP_ABI := " + " ".join(available_abis) + "\n"
+                temp_application_mk_file.write(line)
 
-        with open(application_mk_path, "r") as application_mk_file:
-            with open(temp_application_mk_path, "w") as temp_application_mk_file:
-                for line in application_mk_file:
-                    if line.startswith("APP_ABI"):
-                        line = "APP_ABI := " + " ".join(available_abis) + "\n"
-                    temp_application_mk_file.write(line)
-
-        os.remove(application_mk_path)
-        copy(temp_application_mk_path, application_mk_path)
-    else:
-        raise Exception(f"{apkfile} is not an apk file")
+    os.remove(application_mk_path)
+    copy(temp_application_mk_path, application_mk_path)
 
 
 # n
@@ -799,12 +775,11 @@ def dcc_main(
                     local_module_value = local_module_value.strip()
                     break
 
-        if local_module_value:
-            pattern = r'const-string v0, "[\w\W]+"'
-            replacement = 'const-string v0, "' + local_module_value + '"'
-        else:
+        if not local_module_value:
             raise Exception("Invalid LOCAL_MODULE defined in project/jni/Android.mk")
 
+        pattern = r'const-string v0, "[\w\W]+"'
+        replacement = f'const-string v0, "{local_module_value}"'
         with open(loader_file_path, "r") as file:
             filedata = file.read()
 
@@ -906,7 +881,7 @@ def dcc_main(
             loaderDir = path.join(
                 decompiled_dir,
                 smali_folders[-1],
-                custom_loader[0 : custom_loader.rfind(".")].replace(".", os.sep),
+                custom_loader[: custom_loader.rfind(".")].replace(".", os.sep),
             )
             os.makedirs(loaderDir)
 
@@ -976,11 +951,7 @@ if __name__ == "__main__":
     do_compile = not args["no_build"]
     source_archive = args["project_archive"]
 
-    if args["source_dir"]:
-        project_dir = args["source_dir"]
-    else:
-        project_dir = None
-
+    project_dir = args["source_dir"] if args["source_dir"] else None
     dcc_cfg = {}
     with open("dcc.cfg") as fp:
         dcc_cfg = json.load(fp)
@@ -993,7 +964,7 @@ if __name__ == "__main__":
             NDKBUILD = path.join(ndk_dir, "ndk-build")
 
         if not path.exists(NDKBUILD):
-            raise Exception("Invalid ndk_dir path, file not found at " + NDKBUILD)
+            raise Exception(f"Invalid ndk_dir path, file not found at {NDKBUILD}")
 
     if "apktool" in dcc_cfg and path.exists(dcc_cfg["apktool"]):
         APKTOOL = dcc_cfg["apktool"]
@@ -1019,7 +990,7 @@ if __name__ == "__main__":
             source_archive,
         )
     except Exception as e:
-        Logger.error("Compile %s failed!" % input_apk, exc_info=True)
+        Logger.error(f"Compile {input_apk} failed!", exc_info=True)
         print(f"{str(e)}")
     finally:
         # n

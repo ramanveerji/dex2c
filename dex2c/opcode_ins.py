@@ -67,10 +67,7 @@ class Op(object):
 
 
 def get_variables(irbuilder, *registers):
-    res = []
-    for register in registers:
-        res.append(irbuilder.read_variable(register))
-    return res
+    return [irbuilder.read_variable(register) for register in registers]
 
 
 def assign_cmpl(reg_a, reg_b, reg_c, cmp_type, irbuilder):

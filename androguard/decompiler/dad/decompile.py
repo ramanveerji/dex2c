@@ -126,7 +126,10 @@ class DvMethod(object):
         if not __debug__:
             from androguard.core import bytecode
             # TODO: use tempfile to create a correct tempfile (cross platform compatible)
-            bytecode.method2png('/tmp/dad/graphs/%s#%s.png' % (self.cls_name.split('/')[-1][:-1], self.name), methanalysis)
+            bytecode.method2png(
+                f"/tmp/dad/graphs/{self.cls_name.split('/')[-1][:-1]}#{self.name}.png",
+                methanalysis,
+            )
 
     def process(self, doAST=False):
         logger.debug('METHOD : %s', self.name)
@@ -196,18 +199,14 @@ class DvMethod(object):
         print(self.get_source())
 
     def get_source(self):
-        if self.writer:
-            return str(self.writer)
-        return ''
+        return str(self.writer) if self.writer else ''
 
     def get_source_ext(self):
-        if self.writer:
-            return self.writer.str_ext()
-        return []
+        return self.writer.str_ext() if self.writer else []
 
     def __repr__(self):
         # return 'Method %s' % self.name
-        return 'class DvMethod(object): %s' % self.name
+        return f'class DvMethod(object): {self.name}'
 
 
 class DvClass(object):
@@ -223,10 +222,7 @@ class DvClass(object):
         :param androguard.core.analysis.analysis.Analysis vma: an Analysis object
         """
         name = dvclass.get_name()
-        if name.find('/') > 0:
-            pckg, name = name.rsplit('/', 1)
-        else:
-            pckg, name = '', name
+        pckg, name = name.rsplit('/', 1) if name.find('/') > 0 else ('', name)
         self.package = pckg[1:].replace('/', '.')
         self.name = name[:-1]
 
@@ -279,10 +275,9 @@ class DvClass(object):
 
     def get_ast(self):
         fields = [get_field_ast(f) for f in self.fields]
-        methods = []
-        for m in self.methods:
-            if isinstance(m, DvMethod) and m.ast:
-                methods.append(m.get_ast())
+        methods = [
+            m.get_ast() for m in self.methods if isinstance(m, DvMethod) and m.ast
+        ]
         isInterface = 'interface' in self.access
         return {
             'rawname': self.thisclass[1:-1],
@@ -303,7 +298,7 @@ class DvClass(object):
         superclass, prototype = self.superclass, self.prototype
         if superclass is not None and superclass != 'Ljava/lang/Object;':
             superclass = superclass[1:-1].replace('/', '.')
-            prototype += ' extends %s' % superclass
+            prototype += f' extends {superclass}'
 
         if len(self.interfaces) > 0:
             prototype += ' implements %s' % ', '.join(
@@ -316,14 +311,12 @@ class DvClass(object):
             f_type = util.get_type(field.get_descriptor())
             source.append('    ')
             if access:
-                source.append(' '.join(access))
-                source.append(' ')
-            init_value = field.get_init_value()
-            if init_value:
+                source.extend((' '.join(access), ' '))
+            if init_value := field.get_init_value():
                 value = init_value.value
                 if f_type == 'String':
                     if value:
-                        value = '"%s"' % value.encode("unicode-escape").decode("ascii")
+                        value = f'"{value.encode("unicode-escape").decode("ascii")}"'
                     else:
                         # FIXME we can not check if this value here is null or ""
                         # In both cases we end up here...
@@ -336,10 +329,11 @@ class DvClass(object):
             else:
                 source.append('%s %s;\n' % (f_type, name))
 
-        for method in self.methods:
-            if isinstance(method, DvMethod):
-                source.append(method.get_source())
-
+        source.extend(
+            method.get_source()
+            for method in self.methods
+            if isinstance(method, DvMethod)
+        )
         source.append('}\n')
         return ''.join(source)
 
@@ -347,17 +341,25 @@ class DvClass(object):
         source = []
         if not self.inner and self.package:
             source.append(
-                ('PACKAGE', [('PACKAGE_START', 'package '), (
-                    'NAME_PACKAGE', '%s' % self.package), ('PACKAGE_END', ';\n')
-                             ]))
-        list_proto = [('PROTOTYPE_ACCESS', '%s class ' % ' '.join(self.access)),
-                      ('NAME_PROTOTYPE', '%s' % self.name, self.package)]
+                (
+                    'PACKAGE',
+                    [
+                        ('PACKAGE_START', 'package '),
+                        ('NAME_PACKAGE', f'{self.package}'),
+                        ('PACKAGE_END', ';\n'),
+                    ],
+                )
+            )
+        list_proto = [
+            ('PROTOTYPE_ACCESS', f"{' '.join(self.access)} class "),
+            ('NAME_PROTOTYPE', f'{self.name}', self.package),
+        ]
         superclass = self.superclass
         if superclass is not None and superclass != 'Ljava/lang/Object;':
             superclass = superclass[1:-1].replace('/', '.')
-            list_proto.append(('EXTEND', ' extends '))
-            list_proto.append(('NAME_SUPERCLASS', '%s' % superclass))
-
+            list_proto.extend(
+                (('EXTEND', ' extends '), ('NAME_SUPERCLASS', f'{superclass}'))
+            )
         if len(self.interfaces) > 0:
             list_proto.append(('IMPLEMENTS', ' implements '))
             for i, interface in enumerate(self.interfaces):
@@ -375,43 +377,55 @@ class DvClass(object):
                       if flag & field_access_flags]
             f_type = util.get_type(field.get_descriptor())
             name = field.get_name()
-            if access:
-                access_str = '    %s ' % ' '.join(access)
-            else:
-                access_str = '    '
-
+            access_str = f"    {' '.join(access)} " if access else '    '
             value = None
-            init_value = field.get_init_value()
-            if init_value:
+            if init_value := field.get_init_value():
                 value = init_value.value
                 if f_type == 'String':
                     if value:
-                        value = ' = "%s"' % value.encode("unicode-escape").decode("ascii")
+                        value = f' = "{value.encode("unicode-escape").decode("ascii")}"'
                     else:
                         # FIXME we can not check if this value here is null or ""
                         # In both cases we end up here...
                         value = ' = ""'
                 elif field.proto == 'B':
                     # a byte
-                    value = ' = %s' % hex(struct.unpack("b", struct.pack("B", value))[0])
+                    value = f' = {hex(struct.unpack("b", struct.pack("B", value))[0])}'
                 else:
-                    value = ' = %s' % str(value)
+                    value = f' = {str(value)}'
             if value:
                 source.append(
-                    ('FIELD', [('FIELD_ACCESS', access_str), (
-                        'FIELD_TYPE', '%s' % f_type), ('SPACE', ' '), (
-                                   'NAME_FIELD', '%s' % name, f_type, field), ('FIELD_VALUE', value), ('FIELD_END',
-                                                                                                       ';\n')]))
+                    (
+                        'FIELD',
+                        [
+                            ('FIELD_ACCESS', access_str),
+                            ('FIELD_TYPE', f'{f_type}'),
+                            ('SPACE', ' '),
+                            ('NAME_FIELD', f'{name}', f_type, field),
+                            ('FIELD_VALUE', value),
+                            ('FIELD_END', ';\n'),
+                        ],
+                    )
+                )
             else:
                 source.append(
-                    ('FIELD', [('FIELD_ACCESS', access_str), (
-                        'FIELD_TYPE', '%s' % f_type), ('SPACE', ' '), (
-                                   'NAME_FIELD', '%s' % name, f_type, field), ('FIELD_END',
-                                                                               ';\n')]))
+                    (
+                        'FIELD',
+                        [
+                            ('FIELD_ACCESS', access_str),
+                            ('FIELD_TYPE', f'{f_type}'),
+                            ('SPACE', ' '),
+                            ('NAME_FIELD', f'{name}', f_type, field),
+                            ('FIELD_END', ';\n'),
+                        ],
+                    )
+                )
 
-        for method in self.methods:
-            if isinstance(method, DvMethod):
-                source.append(("METHOD", method.get_source_ext()))
+        source.extend(
+            ("METHOD", method.get_source_ext())
+            for method in self.methods
+            if isinstance(method, DvMethod)
+        )
         source.append(("CLASS_END", [('CLASS_END', '}\n')]))
         return source
 
@@ -419,7 +433,7 @@ class DvClass(object):
         print(self.get_source())
 
     def __repr__(self):
-        return 'Class(%s)' % self.name
+        return f'Class({self.name})'
 
 
 class DvMachine(object):
@@ -450,9 +464,12 @@ class DvMachine(object):
         elif ftype == 'DEY':
             self.vma.add(dvm.DalvikOdexVMFormat(read(name)))
         else:
-            raise ValueError("Format not recognised for filename '%s'" % name)
+            raise ValueError(f"Format not recognised for filename '{name}'")
 
-        self.classes = dict((dvclass.orig_class.get_name(), dvclass.orig_class) for dvclass in self.vma.get_classes())
+        self.classes = {
+            dvclass.orig_class.get_name(): dvclass.orig_class
+            for dvclass in self.vma.get_classes()
+        }
         # TODO why not?
         # util.merge_inner(self.classes)
 
@@ -527,7 +544,7 @@ class DvMachine(object):
         :return: an dictionary for all classes
         :rtype: dict
         """
-        ret = dict()
+        ret = {}
         for name, cls in sorted(self.classes.items()):
             logger.debug('Processing class: %s', name)
             if not isinstance(cls, DvClass):
@@ -548,10 +565,10 @@ def main():
     console_hdlr.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     logger.addHandler(console_hdlr)
 
-    default_file = 'examples/android/TestsAndroguard/bin/TestActivity.apk'
     if len(sys.argv) > 1:
         machine = DvMachine(sys.argv[1])
     else:
+        default_file = 'examples/android/TestsAndroguard/bin/TestActivity.apk'
         machine = DvMachine(default_file)
 
     logger.info('========================')

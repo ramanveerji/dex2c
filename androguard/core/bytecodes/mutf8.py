@@ -89,9 +89,7 @@ class PeekIterator:
         return self.__next__()
 
     def peek(self):
-        if self.idx == len(self.s):
-            return None
-        return self.s[self.idx]
+        return None if self.idx == len(self.s) else self.s[self.idx]
 
 
 def patch_string(s):

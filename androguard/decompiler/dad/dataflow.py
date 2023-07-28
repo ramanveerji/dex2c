@@ -67,10 +67,7 @@ class BasicReachDef(object):
             for reg in self.defs[node]:
                 killed_locs.update(self.def_to_loc[reg])
 
-            A = set()
-            for loc in self.R[node]:
-                if loc not in killed_locs:
-                    A.add(loc)
+            A = {loc for loc in self.R[node] if loc not in killed_locs}
             newA = A.union(self.DB[node])
             if newA != self.A[node]:
                 self.A[node] = newA
@@ -239,22 +236,10 @@ def register_propagation(graph, du, ud):
                                          ' and is not const => skip')
                             continue
 
-                        # We check that the propagation is safe for all the
-                        # variables that are used in the instruction.
-                        # The propagation is not safe if there is a side effect
-                        # along the path from the definition of the variable
-                        # to its use in the instruction, or if the variable may
-                        # be redifined along this path.
-                        safe = True
                         orig_ins_used_vars = orig_ins.get_used_vars()
                         logger.debug('    variables used by the original '
                                      'instruction: %s', orig_ins_used_vars)
-                        for var2 in orig_ins_used_vars:
-                            # loc is the location of the defined variable
-                            # i is the location of the current instruction
-                            if not clear_path(graph, var2, loc, i):
-                                safe = False
-                                break
+                        safe = all(clear_path(graph, var2, loc, i) for var2 in orig_ins_used_vars)
                         if not safe:
                             logger.debug('Propagation NOT SAFE')
                             continue
@@ -319,10 +304,10 @@ class DummyNode(Node):
         return []
 
     def __repr__(self):
-        return '%s-dumnode' % self.name
+        return f'{self.name}-dumnode'
 
     def __str__(self):
-        return '%s-dummynode' % self.name
+        return f'{self.name}-dummynode'
 
 
 def group_variables(lvars, DU, UD):
@@ -359,10 +344,7 @@ def group_variables(lvars, DU, UD):
 def split_variables(graph, lvars, DU, UD):
     variables = group_variables(lvars, DU, UD)
 
-    if lvars:
-        nb_vars = max(lvars) + 1
-    else:
-        nb_vars = 0
+    nb_vars = max(lvars) + 1 if lvars else 0
     for var, versions in variables.items():
         nversions = len(versions)
         if nversions == 1:
@@ -480,7 +462,8 @@ def place_declarations(graph, dvars, du, ud):
                 for def_node in def_nodes:
                     common_dominator = common_dom(
                         idom, common_dominator, def_node)
-                if any(var in range(*common_dominator.ins_range)
-                       for var in ud[var, loc]):
-                    continue
-                common_dominator.add_variable_declaration(dvars[var])
+                if all(
+                    var not in range(*common_dominator.ins_range)
+                    for var in ud[var, loc]
+                ):
+                    common_dominator.add_variable_declaration(dvars[var])

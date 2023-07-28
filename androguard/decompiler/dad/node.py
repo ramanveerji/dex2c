@@ -51,9 +51,9 @@ class MakeProperties(type):
                     property(_wrap_get(attr), _wrap_set(attrs, attr)))
         cls._attrs = attrs
 
-    def __call__(cls, *args, **kwds):
-        obj = super(MakeProperties, cls).__call__(*args, **kwds)
-        for attr in cls._attrs:
+    def __call__(self, *args, **kwds):
+        obj = super(MakeProperties, self).__call__(*args, **kwds)
+        for attr in self._attrs:
             obj.__dict__[attr] = False
         return obj
 
@@ -110,7 +110,7 @@ class Node(object):
         self.latch = n_map.get(self.latch, self.latch)
         for follow_type, value in self.follow.items():
             self.follow[follow_type] = n_map.get(value, value)
-        self.loop_nodes = list(set(n_map.get(n, n) for n in self.loop_nodes))
+        self.loop_nodes = list({n_map.get(n, n) for n in self.loop_nodes})
 
     def get_head(self):
         return self
@@ -119,13 +119,13 @@ class Node(object):
         return self
 
     def __repr__(self):
-        return '%s' % self
+        return f'{self}'
 
 
 class Interval(object):
     def __init__(self, head):
-        self.name = 'Interval-%s' % head.name
-        self.content = set([head])
+        self.name = f'Interval-{head.name}'
+        self.content = {head}
         self.end = None
         self.head = head
         self.in_catch = head.in_catch
@@ -162,4 +162,4 @@ class Interval(object):
         return len(self.content)
 
     def __repr__(self):
-        return '%s(%s)' % (self.name, self.content)
+        return f'{self.name}({self.content})'

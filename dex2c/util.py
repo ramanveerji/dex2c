@@ -232,22 +232,17 @@ def get_params_type(descriptor):
     """
     Return the parameters type of a descriptor (e.g (IC)V)
     """
-    params = descriptor.split(')')[0][1:].split()
-    if params:
-        return [param for param in params]
-    return []
+    return list(params) if (params := descriptor.split(')')[0][1:].split()) else []
 
 
 def get_method_triple(method, return_type=True):
     method_triple = method.get_triple()
     cls_name = method.class_name
     _, name, proto = method_triple
-    if return_type:
-        return cls_name, name, proto
-    else:
+    if not return_type:
         index = proto.find(')')
         proto = proto[:index + 1]
-        return cls_name, name, proto
+    return cls_name, name, proto
 
 
 def create_png(cls_name, meth_name, graph, dir_name='graphs2'):
@@ -285,7 +280,7 @@ def is_float(atype):
 
 
 def is_ref(atype):
-    return atype and (atype[0] == 'L' or atype[0] == '[')
+    return atype and atype[0] in ['L', '[']
 
 
 def is_array(atype):
@@ -320,7 +315,7 @@ def MangleForJni(name):
     for ch in name:
         if ('A' <= ch <= 'Z') or ('a' <= ch <= 'z') or ('0' <= ch <= '9'):
             result += ch
-        elif ch == '.' or ch == '/':
+        elif ch in ['.', '/']:
             result += "_"
         elif ch == '_':
             result += "_1"
@@ -386,17 +381,16 @@ def merge_array_type(type1, type2):
         return type2
     elif is_java_lang_object(type1):
         return type1
-    if is_array(type1):
-        if is_array(type2):
-            new_type = merge_type(type1[1:], type2[1:])
-            if new_type:
-                return '[' + new_type
-            else:
-                return None
-        else:
-            return 'Ljava/lang/Object;'
-    else:
+    if not is_array(type1):
         return merge_array_type(type2, type1)
+    if is_array(type2):
+        return (
+            f'[{new_type}'
+            if (new_type := merge_type(type1[1:], type2[1:]))
+            else None
+        )
+    else:
+        return 'Ljava/lang/Object;'
 
 
 # return bigger type
@@ -413,10 +407,8 @@ def merge_reference_type(type1, type2):
 
 
 def merge_type(type1, type2):
-    if type1 is None and type2 is None:
-        return None
     if type1 is None:
-        return type2
+        return None if type2 is None else type2
     if type2 is None:
         return type1
 
@@ -425,10 +417,7 @@ def merge_type(type1, type2):
         return get_bigger_type(type1, type2)
     elif is_array(type1) or is_array(type2):
         new_type = merge_array_type(type1, type2)
-        if new_type is None:
-            return 'Ljava/lang/Object;'
-        else:
-            return new_type
+        return 'Ljava/lang/Object;' if new_type is None else new_type
     elif is_ref(type1) or is_ref(type2):
         return merge_reference_type(type1, type2)
     else:
@@ -444,11 +433,8 @@ def is_native_method(method):
 
 
 def hex_escape_string(s):
-    result = ''
     s = s.encode('utf8')
-    for c in s:
-        result += '\\x%02x' % c
-    return result
+    return ''.join('\\x%02x' % c for c in s)
     # ERROR: hex escape sequence out of range
     # result = ''
     # s = s.encode('utf8')
@@ -487,7 +473,7 @@ def string(s):
     ret = []
     for c in s:
         if ' ' <= c < '\x7f':
-            if c == "'" or c == '"' or c == '\\':
+            if c in ["'", '"', '\\']:
                 ret.append('\\')
             ret.append(c)
             continue
@@ -497,9 +483,13 @@ def string(s):
                 ret.append(c.encode('unicode-escape').decode("ascii"))
                 continue
         i = ord(c)
-        ret.append('\\u')
-        ret.append('%x' % (i >> 12))
-        ret.append('%x' % ((i >> 8) & 0x0f))
-        ret.append('%x' % ((i >> 4) & 0x0f))
-        ret.append('%x' % (i & 0x0f))
+        ret.extend(
+            (
+                '\\u',
+                '%x' % (i >> 12),
+                '%x' % ((i >> 8) & 0x0F),
+                '%x' % ((i >> 4) & 0x0F),
+                '%x' % (i & 0x0F),
+            )
+        )
     return ''.join(ret)

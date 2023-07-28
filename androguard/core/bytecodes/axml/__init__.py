@@ -144,14 +144,14 @@ class StringBlock(object):
 
         # Next, there is a list of string following.
         # This is only a list of offsets (4 byte each)
-        for i in range(self.stringCount):
-            self.m_stringOffsets.append(unpack('<I', buff.read(4))[0])
-
+        self.m_stringOffsets.extend(
+            unpack('<I', buff.read(4))[0] for _ in range(self.stringCount)
+        )
         # And a list of styles
         # again, a list of offsets
-        for i in range(self.styleCount):
-            self.m_styleOffsets.append(unpack('<I', buff.read(4))[0])
-
+        self.m_styleOffsets.extend(
+            unpack('<I', buff.read(4))[0] for _ in range(self.styleCount)
+        )
         # FIXME it is probably better to parse n strings and not calculate the size
         size = self.header.size - self.stringsOffset
 
@@ -171,11 +171,12 @@ class StringBlock(object):
             if (size % 4) != 0:
                 log.warning("Size of styles is not aligned by four bytes.")
 
-            for i in range(0, size // 4):
-                self.m_styles.append(unpack('<I', buff.read(4))[0])
+            self.m_styles.extend(
+                unpack('<I', buff.read(4))[0] for _ in range(0, size // 4)
+            )
 
     def __repr__(self):
-        return "<StringPool #strings={}, #styles={}, UTF8={}>".format(self.stringCount, self.styleCount, self.m_isUTF8)
+        return f"<StringPool #strings={self.stringCount}, #styles={self.styleCount}, UTF8={self.m_isUTF8}>"
 
     def __getitem__(self, idx):
         """
@@ -243,10 +244,12 @@ class StringBlock(object):
         encoded_bytes, skip = self._decode_length(offset, 1)
         offset += skip
 
-        data = self.m_charbuff[offset: offset + encoded_bytes]
-
         if self.m_charbuff[offset + encoded_bytes] != 0:
-            raise ResParserError("UTF-8 String is not null terminated! At offset={}".format(offset))
+            raise ResParserError(
+                f"UTF-8 String is not null terminated! At offset={offset}"
+            )
+
+        data = self.m_charbuff[offset: offset + encoded_bytes]
 
         return self._decode_bytes(data, 'utf-8', str_len)
 
@@ -263,10 +266,15 @@ class StringBlock(object):
         # The len is the string len in utf-16 units
         encoded_bytes = str_len * 2
 
-        data = self.m_charbuff[offset: offset + encoded_bytes]
+        if (
+            self.m_charbuff[offset + encoded_bytes : offset + encoded_bytes + 2]
+            != b"\x00\x00"
+        ):
+            raise ResParserError(
+                f"UTF-16 String is not null terminated! At offset={offset}"
+            )
 
-        if self.m_charbuff[offset + encoded_bytes:offset + encoded_bytes + 2] != b"\x00\x00":
-            raise ResParserError("UTF-16 String is not null terminated! At offset={}".format(offset))
+        data = self.m_charbuff[offset: offset + encoded_bytes]
 
         return self._decode_bytes(data, 'utf-16', str_len)
 
@@ -305,7 +313,7 @@ class StringBlock(object):
         :returns: tuple of (length, read bytes)
         """
         sizeof_2chars = sizeof_char << 1
-        fmt = "<2{}".format('B' if sizeof_char == 1 else 'H')
+        fmt = f"<2{'B' if sizeof_char == 1 else 'H'}"
         highbit = 0x80 << (8 * (sizeof_char - 1))
 
         length1, length2 = unpack(fmt, self.m_charbuff[offset:(offset + sizeof_2chars)])
@@ -319,9 +327,13 @@ class StringBlock(object):
 
         # These are true asserts, as the size should never be less than the values
         if sizeof_char == 1:
-            assert length <= 0x7FFF, "length of UTF-8 string is too large! At offset={}".format(offset)
+            assert (
+                length <= 0x7FFF
+            ), f"length of UTF-8 string is too large! At offset={offset}"
         else:
-            assert length <= 0x7FFFFFFF, "length of UTF-16 string is too large!  At offset={}".format(offset)
+            assert (
+                length <= 0x7FFFFFFF
+            ), f"length of UTF-16 string is too large!  At offset={offset}"
 
         return length, size
 
@@ -385,14 +397,18 @@ class AXMLParser(object):
 
         # Minimum is a single ARSCHeader, which would be a strange edge case...
         if self.buff.size() < 8:
-            log.error("Filesize is too small to be a valid AXML file! Filesize: {}".format(self.buff.size()))
+            log.error(
+                f"Filesize is too small to be a valid AXML file! Filesize: {self.buff.size()}"
+            )
             self._valid = False
             return
 
         # This would be even stranger, if an AXML file is larger than 4GB...
         # But this is not possible as the maximum chunk size is a unsigned 4 byte int.
         if self.buff.size() > 0xFFFFFFFF:
-            log.error("Filesize is too large to be a valid AXML file! Filesize: {}".format(self.buff.size()))
+            log.error(
+                f"Filesize is too large to be a valid AXML file! Filesize: {self.buff.size()}"
+            )
             self._valid = False
             return
 
@@ -411,20 +427,25 @@ class AXMLParser(object):
             log.warning("Header size is 28024! Are you trying to parse a plain XML file?")
 
         if axml_header.header_size != 8:
-            log.error("This does not look like an AXML file. header size does not equal 8! header size = {}".format(axml_header.header_size))
+            log.error(
+                f"This does not look like an AXML file. header size does not equal 8! header size = {axml_header.header_size}"
+            )
             self._valid = False
             return
 
         if self.filesize > self.buff.size():
-            log.error("This does not look like an AXML file. Declared filesize does not match real size: {} vs {}".format(self.filesize, self.buff.size()))
+            log.error(
+                f"This does not look like an AXML file. Declared filesize does not match real size: {self.filesize} vs {self.buff.size()}"
+            )
             self._valid = False
             return
 
         if self.filesize < self.buff.size():
             # The file can still be parsed up to the point where the chunk should end.
             self.axml_tampered = True
-            log.warning("Declared filesize ({}) is smaller than total file size ({}). "
-                        "Was something appended to the file? Trying to parse it anyways.".format(self.filesize, self.buff.size()))
+            log.warning(
+                f"Declared filesize ({self.filesize}) is smaller than total file size ({self.buff.size()}). Was something appended to the file? Trying to parse it anyways."
+            )
 
         # Not that severe of an error, we have plenty files where this is not
         # set correctly
@@ -443,7 +464,9 @@ class AXMLParser(object):
             return
 
         if header.header_size != 0x1C:
-            log.error("This does not look like an AXML file. String chunk header size does not equal 28! header size = {}".format(header.header_size))
+            log.error(
+                f"This does not look like an AXML file. String chunk header size does not equal 28! header size = {header.header_size}"
+            )
             self._valid = False
             return
 
@@ -507,7 +530,7 @@ class AXMLParser(object):
                     self._valid = False
                     return
 
-                for i in range((h.size - h.header_size) // 4):
+                for _ in range((h.size - h.header_size) // 4):
                     self.m_resourceIDs.append(unpack('<L', self.buff.read(4))[0])
 
                 continue
@@ -525,7 +548,7 @@ class AXMLParser(object):
             # Check that we read a correct header
             if h.header_size != 0x10:
                 log.error("XML Resource Type Chunk header size does not match 16! " \
-                "At chunk type 0x{:04x}, declared header size={}, chunk size={}".format(h.type, h.header_size, h.size))
+                    "At chunk type 0x{:04x}, declared header size={}, chunk size={}".format(h.type, h.header_size, h.size))
                 self._valid = False
                 return
 
@@ -536,7 +559,9 @@ class AXMLParser(object):
             self.m_comment_index, = unpack('<L', self.buff.read(4))
 
             if self.m_comment_index != 0xFFFFFFFF and h.type in [RES_XML_START_NAMESPACE_TYPE, RES_XML_END_NAMESPACE_TYPE]:
-                log.warning("Unhandled Comment at namespace chunk: '{}'".format(self.sb[self.m_comment_index]))
+                log.warning(
+                    f"Unhandled Comment at namespace chunk: '{self.sb[self.m_comment_index]}'"
+                )
 
             if h.type == RES_XML_START_NAMESPACE_TYPE:
                 prefix, = unpack('<L', self.buff.read(4))
@@ -545,15 +570,19 @@ class AXMLParser(object):
                 s_prefix = self.sb[prefix]
                 s_uri = self.sb[uri]
 
-                log.debug("Start of Namespace mapping: prefix {}: '{}' --> uri {}: '{}'".format(prefix, s_prefix, uri, s_uri))
+                log.debug(
+                    f"Start of Namespace mapping: prefix {prefix}: '{s_prefix}' --> uri {uri}: '{s_uri}'"
+                )
 
                 if s_uri == '':
-                    log.warning("Namespace prefix '{}' resolves to empty URI. "
-                                "This might be a packer.".format(s_prefix))
+                    log.warning(
+                        f"Namespace prefix '{s_prefix}' resolves to empty URI. This might be a packer."
+                    )
 
                 if (prefix, uri) in self.namespaces:
-                    log.info("Namespace mapping ({}, {}) already seen! "
-                             "This is usually not a problem but could indicate packers or broken AXML compilers.".format(prefix, uri))
+                    log.info(
+                        f"Namespace mapping ({prefix}, {uri}) already seen! This is usually not a problem but could indicate packers or broken AXML compilers."
+                    )
                 self.namespaces.append((prefix, uri))
 
                 # We can continue with the next chunk, as we store the namespace
@@ -569,8 +598,9 @@ class AXMLParser(object):
                 if (prefix, uri) in self.namespaces:
                     self.namespaces.remove((prefix, uri))
                 else:
-                    log.warning("Reached a NAMESPACE_END without having the namespace stored before? "
-                                "Prefix ID: {}, URI ID: {}".format(prefix, uri))
+                    log.warning(
+                        f"Reached a NAMESPACE_END without having the namespace stored before? Prefix ID: {prefix}, URI ID: {uri}"
+                    )
 
                 # We can continue with the next chunk, as we store the namespace
                 # mappings for each tag
@@ -605,7 +635,7 @@ class AXMLParser(object):
 
                 # Now, we parse the attributes.
                 # Each attribute has 5 fields of 4 byte
-                for i in range(0, self.m_attribute_count * ATTRIBUTE_LENGHT):
+                for _ in range(0, self.m_attribute_count * ATTRIBUTE_LENGHT):
                     # Each field is linearly parsed into the array
                     # Each Attribute contains:
                     # * Namespace URI (String ID)
@@ -665,7 +695,7 @@ class AXMLParser(object):
         """
         Return the String assosciated with the tag name
         """
-        if self.m_name == -1 or (self.m_event != START_TAG and self.m_event != END_TAG):
+        if self.m_name == -1 or self.m_event not in [START_TAG, END_TAG]:
             return u''
 
         return self.sb[self.m_name]
@@ -688,7 +718,7 @@ class AXMLParser(object):
         """
         Return the Namespace URI (if any) as a String for the current tag
         """
-        if self.m_name == -1 or (self.m_event != START_TAG and self.m_event != END_TAG):
+        if self.m_name == -1 or self.m_event not in [START_TAG, END_TAG]:
             return u''
 
         # No Namespace
@@ -711,7 +741,7 @@ class AXMLParser(object):
         4) prefix might be empty
         """
 
-        NSMAP = dict()
+        NSMAP = {}
         # solve 3) by using a set
         for k, v in set(self.namespaces):
             s_prefix = self.sb[k]
@@ -772,19 +802,14 @@ class AXMLParser(object):
         Return the number of Attributes for a Tag
         or -1 if not in a tag
         """
-        if self.m_event != START_TAG:
-            return -1
-
-        return self.m_attribute_count
+        return -1 if self.m_event != START_TAG else self.m_attribute_count
 
     def getAttributeUri(self, index):
         """
         Returns the numeric ID for the namespace URI of an attribute
         """
         offset = self._get_attribute_offset(index)
-        uri = self.m_attributes[offset + ATTRIBUTE_IX_NAMESPACE_URI]
-
-        return uri
+        return self.m_attributes[offset + ATTRIBUTE_IX_NAMESPACE_URI]
 
     def getAttributeNamespace(self, index):
         """
@@ -793,10 +818,7 @@ class AXMLParser(object):
         uri = self.getAttributeUri(index)
 
         # No Namespace
-        if uri == 0xFFFFFFFF:
-            return u''
-
-        return self.sb[uri]
+        return u'' if uri == 0xFFFFFFFF else self.sb[uri]
 
     def getAttributeName(self, index):
         """
@@ -888,10 +910,7 @@ def format_value(_type, _data, lookup_string=lambda ix: "<string>"):
         return "0x%08X" % _data
 
     elif _type == TYPE_INT_BOOLEAN:
-        if _data == 0:
-            return "false"
-        return "true"
-
+        return "false" if _data == 0 else "true"
     elif _type == TYPE_DIMENSION:
         return "%f%s" % (complexToFloat(_data), DIMENSION_UNITS[_data & COMPLEX_UNIT_MASK])
 
@@ -930,16 +949,15 @@ class AXMLPrinter:
             if _type == START_TAG:
                 name = self._fix_name(self.axml.name)
                 uri = self._print_namespace(self.axml.namespace)
-                tag = "{}{}".format(uri, name)
+                tag = f"{uri}{name}"
 
-                comment = self.axml.comment
-                if comment:
+                if comment := self.axml.comment:
                     if self.root is None:
-                        log.warning("Can not attach comment with content '{}' without root!".format(comment))
+                        log.warning(f"Can not attach comment with content '{comment}' without root!")
                     else:
                         cur[-1].append(etree.Comment(comment))
 
-                log.debug("START_TAG: {} (line={})".format(tag, self.axml.m_lineNumber))
+                log.debug(f"START_TAG: {tag} (line={self.axml.m_lineNumber})")
                 elem = etree.Element(tag, nsmap=self.axml.nsmap)
 
                 for i in range(self.axml.getAttributeCount()):
@@ -947,10 +965,10 @@ class AXMLPrinter:
                     name = self._fix_name(self.axml.getAttributeName(i))
                     value = self._fix_value(self._get_attribute_value(i))
 
-                    log.debug("found an attribute: {}{}='{}'".format(uri, name, value.encode("utf-8")))
-                    if "{}{}".format(uri, name) in elem.attrib:
-                        log.warning("Duplicate attribute '{}{}'! Will overwrite!".format(uri, name))
-                    elem.set("{}{}".format(uri, name), value)
+                    log.debug(f"""found an attribute: {uri}{name}='{value.encode("utf-8")}'""")
+                    if f"{uri}{name}" in elem.attrib:
+                        log.warning(f"Duplicate attribute '{uri}{name}'! Will overwrite!")
+                    elem.set(f"{uri}{name}", value)
 
                 if self.root is None:
                     self.root = elem
@@ -968,12 +986,14 @@ class AXMLPrinter:
 
                 name = self.axml.name
                 uri = self._print_namespace(self.axml.namespace)
-                tag = "{}{}".format(uri, name)
+                tag = f"{uri}{name}"
                 if cur[-1].tag != tag:
-                    log.warning("Closing tag '{}' does not match current stack! At line number: {}. Is the XML malformed?".format(self.axml.name, self.axml.m_lineNumber))
+                    log.warning(
+                        f"Closing tag '{self.axml.name}' does not match current stack! At line number: {self.axml.m_lineNumber}. Is the XML malformed?"
+                    )
                 cur.pop()
             if _type == TEXT:
-                log.debug("TEXT for {}".format(cur[-1]))
+                log.debug(f"TEXT for {cur[-1]}")
                 cur[-1].text = self.axml.text
             if _type == END_DOCUMENT:
                 # Check if all namespace mappings are closed
@@ -1050,21 +1070,23 @@ class AXMLPrinter:
         :return: a fixed version of the name
         """
         if not name[0].isalpha() and name[0] != "_":
-            log.warning("Invalid start for name '{}'".format(name))
+            log.warning(f"Invalid start for name '{name}'")
             self.packerwarning = True
-            name = "_{}".format(name)
+            name = f"_{name}"
         if name.startswith("android:"):
             # Seems be a common thing...
             # Actually this means that the Manifest is likely to be broken, as
             # usually no namespace URI is set in this case.
-            log.warning("Name '{}' starts with 'android:' prefix! The Manifest seems to be broken? Removing prefix.".format(name))
+            log.warning(
+                f"Name '{name}' starts with 'android:' prefix! The Manifest seems to be broken? Removing prefix."
+            )
             self.packerwarning = True
             name = name[len("android:"):]
         if ":" in name:
             # Print out an extra warning
-            log.warning("Name seems to contain a namespace prefix: '{}'".format(name))
+            log.warning(f"Name seems to contain a namespace prefix: '{name}'")
         if not re.match(r"^[a-zA-Z0-9._-]*$", name):
-            log.warning("Name '{}' contains invalid characters!".format(name))
+            log.warning(f"Name '{name}' contains invalid characters!")
             self.packerwarning = True
             name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
 

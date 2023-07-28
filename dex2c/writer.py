@@ -41,14 +41,13 @@ class TmpnameAllocator(object):
                 raise Exception("Unable to allocate tmpname for None.")
             if item in self.numbering:
                 continue
-            else:
-                self.numbering[item] = self.next_name
-                self.next_name += 1
+            self.numbering[item] = self.next_name
+            self.next_name += 1
 
     def get_name(self, item):
         assert item and item in self.numbering
-        logger.debug("%s - > %s%s" % (item, self.prefix, self.numbering[item]))
-        return '%s%s' % (self.prefix, self.numbering[item])
+        logger.debug(f"{item} - > {self.prefix}{self.numbering[item]}")
+        return f'{self.prefix}{self.numbering[item]}'
 
 
 class Writer(object):
@@ -69,8 +68,7 @@ class Writer(object):
         return ''.join(self.buffer)
 
     def write_trace(self, ins):
-        s = ins.dump()
-        if s:
+        if s := ins.dump():
             self.write('LOGD("%s");\n' % s)
 
     def write(self, s):
@@ -85,7 +83,7 @@ class Writer(object):
     def visit_move_param(self, ins):
         param = ins.get_param()
         value = param.get_value()
-        self.write('v%s = (%s)' % (self.ra(value), get_cdecl_type(value.get_type())))
+        self.write(f'v{self.ra(value)} = ({get_cdecl_type(value.get_type())})')
         param.visit(self)
         self.write(";\n")
 
@@ -105,11 +103,14 @@ class Writer(object):
             params = params[1:]
         proto = ''
         if self.irmethod.params_type:
-            proto = ', '.join(['%s p%s' % (get_native_type(p_type), param) for p_type,
-                                                                               param in
-                               zip(self.irmethod.params_type, params)])
+            proto = ', '.join(
+                [
+                    f'{get_native_type(p_type)} p{param}'
+                    for p_type, param in zip(self.irmethod.params_type, params)
+                ]
+            )
         if proto:
-            self.write('(JNIEnv *env, jobject thiz, %s)' % proto)
+            self.write(f'(JNIEnv *env, jobject thiz, {proto})')
         else:
             self.write('(JNIEnv *env, jobject thiz)')
         self.write('{\n')
@@ -122,14 +123,13 @@ class Writer(object):
             self.visit_landing_pad(lp)
 
         return_type = self.irmethod.rtype
-        if return_type[0] != 'V':
-            if return_type[0] == 'L':
-                self.write("EX_UnwindBlock: return NULL;\n")
-            else:
-                self.write("EX_UnwindBlock: return (%s)0;\n" % (get_native_type(return_type)))
-        else:
+        if return_type[0] == 'V':
             self.write("EX_UnwindBlock: return;\n")
 
+        elif return_type[0] == 'L':
+            self.write("EX_UnwindBlock: return NULL;\n")
+        else:
+            self.write("EX_UnwindBlock: return (%s)0;\n" % (get_native_type(return_type)))
         self.write('}\n')
 
     def visit_node(self, node):
@@ -143,7 +143,7 @@ class Writer(object):
             if r in var_declared:
                 continue
             var_declared.add(r)
-            self.write('%s v%s' % (get_cdecl_type(var_type), r))
+            self.write(f'{get_cdecl_type(var_type)} v{r}')
             if util.is_ref(var_type):
                 self.write(' = NULL');
             self.write(";\n")
@@ -157,7 +157,7 @@ class Writer(object):
             if jclass in declared:
                 continue
             declared.add(jclass)
-            to_declare.append('%s = NULL' % (self.ca(jclass)))
+            to_declare.append(f'{self.ca(jclass)} = NULL')
         if to_declare:
             self.write('jclass %s;\n' % (','.join(to_declare)))
 
@@ -167,7 +167,7 @@ class Writer(object):
             if jfield in declared:
                 continue
             declared.add(jfield)
-            to_declare.append('%s = NULL' % (self.fa(jfield)))
+            to_declare.append(f'{self.fa(jfield)} = NULL')
         if to_declare:
             self.write('jfieldID %s;\n' % (','.join(to_declare)))
 
@@ -177,7 +177,7 @@ class Writer(object):
             if jmethod in declared:
                 continue
             declared.add(jmethod)
-            to_declare.append('%s = NULL' % (self.ma(jmethod)))
+            to_declare.append(f'{self.ma(jmethod)} = NULL')
         if to_declare:
             self.write('jmethodID %s;\n' % (', '.join(to_declare)))
 
@@ -256,17 +256,17 @@ class Writer(object):
             self.write('v%s = %r;\n' % (self.ra(val), cst))
 
     def visit_constant(self, cst):
-        self.write('%s' % cst)
+        self.write(f'{cst}')
 
     def visit_variable(self, var):
-        self.write('v%s' % self.ra(var))
+        self.write(f'v{self.ra(var)}')
 
     def visit_param(self, param):
         decl_type = get_native_type(param.get_type())
         if decl_type in ('jstring', 'jobject', 'jarray'):
-            self.write('env->NewLocalRef(p%s)' % (param.get_register()))
+            self.write(f'env->NewLocalRef(p{param.get_register()})')
         else:
-            self.write('p%s' % param.get_register())
+            self.write(f'p{param.get_register()}')
 
     def visit_this(self):
         self.write('env->NewLocalRef(thiz)')
@@ -278,11 +278,13 @@ class Writer(object):
 
     def visit_move(self, lhs, rhs):
         self.write_kill_local_reference(lhs)
-        self.write('v%s = ' % (self.ra(lhs)))
+        self.write(f'v{self.ra(lhs)} = ')
         if is_primitive_type(rhs.get_type()):
-            self.write('%s' % (self.get_variable_or_const(rhs)))
+            self.write(f'{self.get_variable_or_const(rhs)}')
         else:
-            self.write('(%s) env->NewLocalRef(v%s)' % (get_cdecl_type(lhs.get_type()), self.ra(rhs)))
+            self.write(
+                f'({get_cdecl_type(lhs.get_type())}) env->NewLocalRef(v{self.ra(rhs)})'
+            )
         self.write(';\n')
 
     def visit_astore(self, ins, array, index, rhs):
@@ -293,16 +295,14 @@ class Writer(object):
         elem_type = ins.get_elem_type()
         if is_primitive_type(elem_type):
             self.write('{%s val = %s;' % (get_native_type(elem_type), self.get_variable_or_const(rhs)))
-            self.write('env->Set%sArrayRegion((%sArray) v%s, (jint) %s, 1, &val);' %
-                       (get_type_descriptor(elem_type), get_native_type(elem_type),
-                        self.ra(array),
-                        self.get_variable_or_const(index)))
+            self.write(
+                f'env->Set{get_type_descriptor(elem_type)}ArrayRegion(({get_native_type(elem_type)}Array) v{self.ra(array)}, (jint) {self.get_variable_or_const(index)}, 1, &val);'
+            )
             self.write('}\n')
         else:
-            self.write('env->SetObjectArrayElement((jobjectArray) v%s, (jint) %s, v%s);' %
-                       (self.ra(array),
-                        self.get_variable_or_const(index),
-                        self.ra(rhs)))
+            self.write(
+                f'env->SetObjectArrayElement((jobjectArray) v{self.ra(array)}, (jint) {self.get_variable_or_const(index)}, v{self.ra(rhs)});'
+            )
         self.write_undefine_ex_handle(ins)
         self.write('}\n')
 
@@ -361,7 +361,7 @@ class Writer(object):
         self.write('jvalue args[] = {')
         vars = []
         for arg, atype in zip(args, ptype):
-            if atype[0] == 'L' or atype[0] == '[':
+            if atype[0] in ['L', '[']:
                 vars.append('{.l = %s}' % (self.get_variable_or_const(arg)))
             elif atype[0] == 'Z':
                 vars.append('{.z = (jboolean) %s}' % (self.get_variable_or_const(arg)))
@@ -380,14 +380,14 @@ class Writer(object):
             elif atype[0] == 'D':
                 vars.append('{.d = %s}' % (self.get_variable_or_const(arg)))
             else:
-                raise Exception("Unknow signuare type %s" % (atype))
+                raise Exception(f"Unknow signuare type {atype}")
         self.write(','.join(vars))
         self.write('};\n')
         if rtype != 'V':
             self.write_kill_local_reference(ins.get_value())
             ins.get_value().visit(self)
             self.write(' = ')
-            self.write("(%s) " % (get_native_type(ins.get_value().get_type())))
+            self.write(f"({get_native_type(ins.get_value().get_type())}) ")
 
         if invoke_type == 'super':
             self.write(
@@ -452,16 +452,15 @@ class Writer(object):
         elem_type = ins.get_elem_type()
         if is_primitive_type(elem_type):
             self.write('{%s val;' % (get_native_type(elem_type)))
-            self.write('env->Get%sArrayRegion((%sArray) v%s, (jint) %s, 1, &val);' %
-                       (get_type_descriptor(elem_type), get_native_type(elem_type), self.ra(array),
-                        self.get_variable_or_const(index)))
+            self.write(
+                f'env->Get{get_type_descriptor(elem_type)}ArrayRegion(({get_native_type(elem_type)}Array) v{self.ra(array)}, (jint) {self.get_variable_or_const(index)}, 1, &val);'
+            )
             self.write('v%s = val;}' % (self.ra(result)))
         else:
             self.write_kill_local_reference(result)
-            self.write('v%s = (%s) env->GetObjectArrayElement((jobjectArray) v%s, (jint) %s);' %
-                       (self.ra(result), get_native_type(result.get_type()),
-                        self.ra(array),
-                        self.get_variable_or_const(index)))
+            self.write(
+                f'v{self.ra(result)} = ({get_native_type(result.get_type())}) env->GetObjectArrayElement((jobjectArray) v{self.ra(array)}, (jint) {self.get_variable_or_const(index)});'
+            )
         self.write('\n')
         self.write_undefine_ex_handle(ins)
         self.write('}\n')
@@ -506,13 +505,13 @@ class Writer(object):
         self.write_trace(ins)
         params = []
         for arg in args:
-            p = '%s' % (self.get_variable_or_const(arg))
+            p = f'{self.get_variable_or_const(arg)}'
             params.append(p)
         self.write('{\n')
         self.write_define_ex_handle(ins)
         self.write_kill_local_reference(ins.get_value())
         elem_type = atype[1:]
-        assert elem_type != 'D' and elem_type != 'J'
+        assert elem_type not in ['D', 'J']
         if is_primitive_type(elem_type):
             result.visit(self)
             self.write(' = env->New%sArray((jint) %r);\n' % (get_type_descriptor(elem_type), size))
@@ -531,12 +530,13 @@ class Writer(object):
         self.write('{\n')
         self.write('static const unsigned char data[] = {')
         data = value.get_data()
-        tab = []
         elem_id = 'B'
         elem_size = 1
 
-        for i in range(0, value.size * value.element_width, elem_size):
-            tab.append('%s' % unpack(elem_id, data[i:i + elem_size])[0])
+        tab = [
+            f'{unpack(elem_id, data[i:i + elem_size])[0]}'
+            for i in range(0, value.size * value.element_width, elem_size)
+        ]
         self.write(', '.join(tab))
         self.write('};\n')
 
@@ -545,9 +545,9 @@ class Writer(object):
 
         self.write(
             'env->Set%sArrayRegion((%sArray) v%s, 0, %d, (const %s *) data);\n' % (get_type_descriptor(elem_type), \
-                                                                                   get_native_type(elem_type),
+                                                                                       get_native_type(elem_type),
                                                                                    self.ra(array), \
-                                                                                   array_size,
+                                                                                       array_size,
                                                                                    get_native_type(elem_type)))
         self.write('}\n')
 
@@ -594,20 +594,20 @@ class Writer(object):
             self.write('goto EX_HANDLE;\n')
             self.write('}\n')
             self.write('#undef EX_HANDLE\n')
-        self.write('v%s = ' % (self.ra(result)))
+        self.write(f'v{self.ra(result)} = ')
         arg1.visit(self)
-        self.write(' %s ' % (op))
+        self.write(f' {op} ')
         arg2.visit(self)
         self.write(';\n')
         self.write('}\n')
 
     def visit_binary_expression(self, ins, result, op, arg1, arg2):
         self.write_trace(ins)
-        if op == Op.DIV or op == Op.MOD:
+        if op in [Op.DIV, Op.MOD]:
             self.write_div_expression(ins, result, op, arg1, arg2)
             return
 
-        self.write('v%s = ' % self.ra(result))
+        self.write(f'v{self.ra(result)} = ')
         # 浮点数有个NaN值,任何值与他比较都不成立,包括NaN.
         if op == Op.CMP:
             self.write('(')
@@ -643,27 +643,27 @@ class Writer(object):
             arg2.visit(self)
             self.write(') ? -1 : 1;\n')
         elif op == Op.INTSHR:
-            self.write('(%s) >> (' % (self.get_variable_or_const(arg1)))
+            self.write(f'({self.get_variable_or_const(arg1)}) >> (')
             arg2.visit(self)
             self.write(' & 0x1f);\n')
         elif op == Op.INTSHL:
-            self.write('(%s) << (' % (self.get_variable_or_const(arg1)))
+            self.write(f'({self.get_variable_or_const(arg1)}) << (')
             arg2.visit(self)
             self.write(' & 0x1f);\n')
         elif op == Op.INTUSHR:
-            self.write('((uint32_t) %s) >> (' % (self.get_variable_or_const(arg1)))
+            self.write(f'((uint32_t) {self.get_variable_or_const(arg1)}) >> (')
             arg2.visit(self)
             self.write(' & 0x1f);\n')
         elif op == Op.LONGSHR:
-            self.write('(v%s) >> (' % (self.ra(arg1)))
+            self.write(f'(v{self.ra(arg1)}) >> (')
             arg2.visit(self)
             self.write(' & 0x3f);\n')
         elif op == Op.LONGSHL:
-            self.write('(%s) << (' % (self.get_variable_or_const(arg1)))
+            self.write(f'({self.get_variable_or_const(arg1)}) << (')
             arg2.visit(self)
             self.write(' & 0x3f);\n')
         elif op == Op.LONGUSHR:
-            self.write('((uint64_t) v%s) >> (' % (self.ra(arg1)))
+            self.write(f'((uint64_t) v{self.ra(arg1)}) >> (')
             arg2.visit(self)
             self.write(' & 0x3f);\n')
         elif op == Op.MODF:
@@ -673,7 +673,7 @@ class Writer(object):
         else:
             self.write('(')
             arg1.visit(self)
-            self.write(' %s ' % op)
+            self.write(f' {op} ')
             arg2.visit(self)
             self.write(');\n')
 
@@ -705,7 +705,7 @@ class Writer(object):
         self.write('if(')
         if is_primitive_type(arg1.get_type()):
             arg1.visit(self)
-            self.write(' %s ' % op)
+            self.write(f' {op} ')
             arg2.visit(self)
         else:
             if op == '!=':
@@ -734,9 +734,9 @@ class Writer(object):
         self.write('if(')
         arg.visit(self)
         if atype in 'ZBSCIJFD':
-            self.write(' %s 0' % op)
+            self.write(f' {op} 0')
         else:
-            self.write(' %s NULL' % op)
+            self.write(f' {op} NULL')
         self.write(')')
         self.write('{\n')
         self.write('goto L%d;\n' % (true_target_node.num))
@@ -788,7 +788,4 @@ class Writer(object):
         self.write('}\n')
 
     def get_variable_or_const(self, var):
-        if isinstance(var, Constant):
-            return '%s' % var
-        else:
-            return 'v%s' % self.ra(var)
+        return f'{var}' if isinstance(var, Constant) else f'v{self.ra(var)}'

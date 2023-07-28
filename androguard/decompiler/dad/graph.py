@@ -41,7 +41,7 @@ class Graph(object):
     def __init__(self):
         self.entry = None
         self.exit = None
-        self.nodes = list()
+        self.nodes = []
         self.edges = defaultdict(list)
 
         self.rpo = []
@@ -159,8 +159,7 @@ class Graph(object):
             visited.add(n)
             for suc in self.all_sucs(n):
                 if suc not in visited:
-                    for cnt, s in _visit(suc, cnt):
-                        yield cnt, s
+                    yield from _visit(suc, cnt)
             n.po = cnt
             yield cnt + 1, n
 
@@ -199,7 +198,7 @@ class Graph(object):
                                 color='black',
                                 style='dashed'))
 
-        g.write(os.path.join(dname, '%s.png' % name), format='png')
+        g.write(os.path.join(dname, f'{name}.png'), format='png')
 
     def immediate_dominators(self):
         return dom_lt(self)
@@ -211,8 +210,7 @@ class Graph(object):
         return str(self.nodes)
 
     def __iter__(self):
-        for node in self.nodes:
-            yield node
+        yield from self.nodes
 
 
 def split_if_nodes(graph):
@@ -227,8 +225,8 @@ def split_if_nodes(graph):
             if len(node.get_ins()) > 1:
                 pre_ins = node.get_ins()[:-1]
                 last_ins = node.get_ins()[-1]
-                pre_node = StatementBlock('%s-pre' % node.name, pre_ins)
-                cond_node = CondBlock('%s-cond' % node.name, [last_ins])
+                pre_node = StatementBlock(f'{node.name}-pre', pre_ins)
+                cond_node = CondBlock(f'{node.name}-cond', [last_ins])
                 node_map[node] = pre_node
                 node_map[pre_node] = pre_node
                 node_map[cond_node] = cond_node
@@ -288,9 +286,9 @@ def simplify(graph):
     """
     redo = True
     while redo:
-        redo = False
         node_map = {}
         to_update = set()
+        redo = False
         for node in graph.nodes[:]:
             if node.type.is_stmt and node in graph:
                 sucs = graph.all_sucs(node)
@@ -315,15 +313,17 @@ def simplify(graph):
                     if node is graph.entry:
                         graph.entry = suc
                     graph.remove_node(node)
-                elif (suc.type.is_stmt and len(graph.all_preds(suc)) == 1 and
-                          not (suc in graph.catch_edges) and not (
-                            (node is suc) or (suc is graph.entry))):
+                elif (
+                    suc.type.is_stmt
+                    and len(graph.all_preds(suc)) == 1
+                    and suc not in graph.catch_edges
+                    and node is not suc is not graph.entry
+                ):
                     ins_to_merge = suc.get_ins()
                     node.add_ins(ins_to_merge)
                     for var in suc.var_to_declare:
                         node.add_variable_declaration(var)
-                    new_suc = graph.sucs(suc)[0]
-                    if new_suc:
+                    if new_suc := graph.sucs(suc)[0]:
                         graph.add_edge(node, new_suc)
                     for exception_suc in graph.catch_edges.get(suc, []):
                         graph.add_catch_edge(node, exception_suc)
@@ -407,7 +407,7 @@ def bfs(start):
     :param start: start node
     """
     to_visit = [start]
-    visited = set([start])
+    visited = {start}
     while to_visit:
         node = to_visit.pop(0)
         yield node
@@ -502,9 +502,7 @@ def construct(start_block, vmap, exceptions):
 
     exceptions_start_block = []
     for exception in exceptions:
-        for _, _, block in exception.exceptions:
-            exceptions_start_block.append(block)
-
+        exceptions_start_block.extend(block for _, _, block in exception.exceptions)
     for block in bfs_blocks:
         node = make_node(graph, block, block_to_node, vmap, gen_ret)
         graph.add_node(node)
@@ -530,7 +528,7 @@ def construct(start_block, vmap, exceptions):
         # Not sure that this case is possible...
         logger.error('Multiple exit nodes found !')
         graph.exit = graph.rpo[-1]
-    elif len(lexit_nodes) < 1:
+    elif not lexit_nodes:
         # A method can have no return if it has throw statement(s) or if its
         # body is a while(1) whitout break/return.
         logger.debug('No exit node found !')

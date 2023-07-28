@@ -33,10 +33,10 @@ class IrBasicBlock(object):
         # MoveParam指令会给参数生成一个局部引用(local reference), 使用局部引用引用参数
         # 不能将它放入instr_list, 因为第一个基本块可以是循环
         self.move_param_insns = []
-        self.var_to_declare = list()
-        self.class_to_declare = list()
-        self.field_to_declare = list()
-        self.method_to_declare = list()
+        self.var_to_declare = []
+        self.class_to_declare = []
+        self.field_to_declare = []
+        self.method_to_declare = []
         self.num = -1  # 基本块编号
 
         # 处理异常相关
@@ -53,10 +53,7 @@ class IrBasicBlock(object):
 
         self.catch_successors = set()
 
-        if dvm_basicblock:
-            self.start = self.dvm_basicblock.get_start()
-        else:
-            self.start = -1
+        self.start = self.dvm_basicblock.get_start() if dvm_basicblock else -1
 
     def get_instr_list(self):
         return self.instr_list
@@ -122,11 +119,8 @@ class IrBasicBlock(object):
 
     def __str__(self):
         s = [self.label]
-        for phi in self.phis:
-            s.append(phi.print())
-
-        for ins in self.instr_list:
-            s.append(str(ins))
+        s.extend(phi.print() for phi in self.phis)
+        s.extend(str(ins) for ins in self.instr_list)
         return '\n'.join(s)
 
 
@@ -138,7 +132,7 @@ class LandingPad(IrBasicBlock):
 
     def add_catch_handle(self, atype, node):
         if atype in self.handles and atype != 'Ljava/lang/Throwable;':
-            raise Exception("duplicate catch handle for %s" % atype)
+            raise Exception(f"duplicate catch handle for {atype}")
 
         if atype not in self.handles:
             self.handles[atype] = node
@@ -169,22 +163,18 @@ def fill_node_from_block(irbuilder, node):
             fillarray = block.get_special_ins(idx)
             lastins = _ins(ins, irbuilder, fillarray)
             current_node.add_ins(lastins)
-        # invoke-kind[/range]
         elif 0x6e <= opcode <= 0x72 or 0x74 <= opcode <= 0x78:
             lastins = _ins(ins, irbuilder)
             current_node.add_ins(lastins)
         elif 0x24 <= opcode <= 0x25:
             lastins = _ins(ins, irbuilder)
             current_node.add_ins(lastins)
-        # move-result*
         elif 0xa <= opcode <= 0xc:
             lastins = _ins(ins, irbuilder)
             current_node.add_ins(lastins)
-        # move-exception
         elif opcode == 0xd:
             lastins = _ins(ins, irbuilder, current_node.catch_type)
             current_node.add_ins(lastins)
-        # {packed,sparse}-switch
         elif 0x2b <= opcode <= 0x2c:
             values = block.get_special_ins(idx)
             lastins = _ins(ins, irbuilder, values)
@@ -198,7 +188,7 @@ def fill_node_from_block(irbuilder, node):
             # aget-object vTmp, v1, v0
             # move-result-object v1, vTmp
             # 类似iget-object
-            if opcode == 0x46 or opcode == 0x54:
+            if opcode in [0x46, 0x54]:
                 vtmp = irbuilder.write_result_variable()
                 val = lastins.get_value()
                 lastins.set_value(vtmp)
