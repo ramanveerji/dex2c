@@ -1,4 +1,5 @@
 networkx
+rust
 pydot>=1.4.1
 future
 pyasn1
