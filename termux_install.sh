@@ -30,7 +30,6 @@ LDFLAGS="-L${PREFIX}/lib/" CFLAGS="-I${PREFIX}/include/" pip install --upgrade w
 pip install cython setuptools
 CFLAGS="-Wno-error=incompatible-function-pointer-types -O0" pip install --upgrade lxml
 
-
 echo "${green}━━━ Starting SDK Tools installation ━━━${nocolor}"
 if [ -d "android-sdk" ]; then
   echo "${red}Seems like sdk tools already installed, skipping...${nocolor}"
@@ -60,6 +59,9 @@ else
   cd && pkg upgrade && pkg install wget && wget https://github.com/MrIkso/AndroidIDE-NDK/raw/main/ndk-install.sh --no-verbose --show-progress -N && chmod +x ndk-install.sh && bash ndk-install.sh
 fi
 
+if [ -f "ndk-install.sh" ]; then
+  rm ndk-install.sh
+fi
 
 if [ -d "$HOME/android-sdk/ndk/17.2.4988734" ]; then
   ndk_version="17.2.4988734"
@@ -79,6 +81,8 @@ elif [ -d "$HOME/android-sdk/ndk/24.0.8215888" ]; then
   ndk_version="24.0.8215888"
 elif [ -d "$HOME/android-sdk/ndk/26.1.10909125" ]; then
   ndk_version="26.1.10909125"
+elif [ -d "$HOME/android-sdk/ndk/27.1.12297006" ]; then
+  ndk_version="27.1.12297006"
 else
   echo "${red}You didn't Installed any ndk terminating!"
   exit 1
@@ -91,10 +95,10 @@ echo "${green}━━━ Setting up apktool ━━━${nocolor}"
 if [ -f "$PREFIX/bin/apktool.jar" ]; then
   echo "${blue}apktool is already installed${nocolor}"
 else
-  sh -c 'wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.1.jar -O $PREFIX/bin/apktool.jar'
-  
+  sh -c 'wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.10.0.jar -O $PREFIX/bin/apktool.jar'
+
   chmod +r $PREFIX/bin/apktool.jar
-  
+
   sh -c 'wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O $PREFIX/bin/apktool' && chmod +x $PREFIX/bin/apktool || exit 2
 fi
 
@@ -112,15 +116,15 @@ if [ -f "$HOME/dex2c/tools/apktool.jar" ]; then
   rm $HOME/dex2c/tools/apktool.jar
   cp $PREFIX/bin/apktool.jar $HOME/dex2c/tools/apktool.jar
 else
-sh -c 'wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.1.jar -O $HOME/dex2c/tools/apktool.jar'
+  sh -c 'wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.10.0.jar -O $HOME/dex2c/tools/apktool.jar'
 fi
 
 cd ~/dex2c
 python3 -m pip install -r requirements.txt || exit 2
 
-if [ -f ".bashrc" ]; then
+if [ -f "$HOME/.bashrc" ]; then
   echo -e "export ANDROID_HOME=$HOME/android-sdk\nexport PATH=\$PATH:$HOME/android-sdk/cmdline-tools/latest/bin\nexport PATH=\$PATH:$HOME/android-sdk/platform-tools\nexport PATH=\$PATH:$HOME/android-sdk/build-tools/34.0.4\nexport PATH=\$PATH:$HOME/android-sdk/ndk/$ndk_version\nexport ANDROID_NDK_ROOT=$HOME/android-sdk/ndk/$ndk_version" >> ~/.bashrc
-elif [ -f ".zshrc" ]; then
+elif [ -f "$HOME/.zshrc" ]; then
   echo -e "export ANDROID_HOME=$HOME/android-sdk\nexport PATH=\$PATH:$HOME/android-sdk/cmdline-tools/latest/bin\nexport PATH=\$PATH:$HOME/android-sdk/platform-tools\nexport PATH=\$PATH:$HOME/android-sdk/build-tools/34.0.4\nexport PATH=\$PATH:$HOME/android-sdk/ndk/$ndk_version\nexport ANDROID_NDK_ROOT=$HOME/android-sdk/ndk/$ndk_version" >> ~/.zshrc
 else
   echo -e "export ANDROID_HOME=$HOME/android-sdk\nexport PATH=\$PATH:$HOME/android-sdk/cmdline-tools/latest/bin\nexport PATH=\$PATH:$HOME/android-sdk/platform-tools\nexport PATH=\$PATH:$HOME/android-sdk/build-tools/34.0.4\nexport PATH=\$PATH:$HOME/android-sdk/ndk/$ndk_version\nexport ANDROID_NDK_ROOT=$HOME/android-sdk/ndk/$ndk_version" >> $PREFIX/etc/bash.bashrc

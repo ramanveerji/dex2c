@@ -82,7 +82,7 @@ Python 3.8 or higher is required for running this tool. So, make sure your pytho
    ```
 3. Download **Apktool** latest version from [bitbucket](https://bitbucket.org/iBotPeaches/apktool/downloads/) and save it in `tools` folder with the name `apktool.jar`
    ```bash
-   wget -O tools/apktool.jar https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar
+   wget -O tools/apktool.jar https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.10.0.jar
    ```
 4. <a href="https://developer.android.com/ndk/downloads">Download</a> android NDK for your OS and extract it. Copy the folder path where `ndk-build` executable is located inside the extracted folder and configure `ndk_dir` in `dcc.cfg`
 
@@ -94,20 +94,24 @@ Python 3.8 or higher is required for running this tool. So, make sure your pytho
    ```bash
    pip3 install -r requirements.txt
    ```
-2. Install JRE/JDK if you don't have it installed. The recommended JDK version is 11.
+2. Install JRE/JDK & zipalign if you don't have it installed. The recommended JDK version is 17.
    ```bash
-   sudo apt-get install openjdk-11-jdk
+   sudo apt-get install openjdk-17-jdk zipalign
    ```
 
 ### Windows
 
 ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
+> [!NOTE]
+> While this is supported on Windows, we strongly recommend using a Linux system for optimal compatibility and performance. If you're on Windows, consider using a Windows Subsystem for Linux (WSL) distribution to ensure a smoother and more reliable experience. The setup and instructions for WSL are the same as those for a [Linux](#linux).
+
 1. Install required dependencies.
    ```bash
    pip3 install -r requirements.txt
    ```
-2. Install JRE/JDK from <a href="https://www.oracle.com/java/technologies/javase/jdk11-archive-downloads.html">oracle</a> if you don't have it installed. Search in Google, how to install JDK in Windows if you need more guidance on this topic. The recommended JDK version is 11.
+2. Install JRE/JDK from <a href="https://www.oracle.com/java/technologies/javase/jdk11-archive-downloads.html">oracle</a> if you don't have it installed. Search in Google, how to install JDK in Windows if you need more guidance on this topic. The recommended JDK version is 11 and up.
+3. Make sure you've `zipalign` installed. You'll get it in Android SDK build-tools from <a href="https://developer.android.com/studio/releases/build-tools">here</a>. Add it to your system path.
 
 ### Termux
 
@@ -212,6 +216,7 @@ Open `project/jni/Android.mk` file in the cloned directory. You will find a vari
     - [x] --custom-loader
     - [x] --force-keep-libs
     - [x] --obfuscate
+    - [x] --dynamic-register
 
 See the [open issues](https://github.com/codehasan/dex2c/issues) for a full list of proposed features and known issues.
 
